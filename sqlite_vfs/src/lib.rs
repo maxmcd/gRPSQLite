@@ -1,30 +1,67 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
-
 tonic::include_proto!("grpc_vfs");
 
-#[cfg(test)]
-mod tests {
-    use crate::{grpsqlite_client::GrpsqliteClient, GetCapabilitiesRequest};
-    use tonic::Request;
+mod handle;
 
-    use super::*;
+struct GrpcVfs {}
 
-    #[tokio::test]
-    async fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+impl sqlite_plugin::vfs::Vfs for GrpcVfs {
+    type Handle = handle::GrpcVfsHandle;
 
+    fn register_logger(&self, logger: sqlite_plugin::logger::SqliteLogger) {
+        todo!()
+    }
 
-        // test creating the client
-        let mut client = GrpsqliteClient::connect("http://localhost:50051").await.unwrap();
-        client.get_capabilities(Request::new(GetCapabilitiesRequest {
-            client_token: "".to_string(),
-            file_name: "".to_string(),
-            readonly: false,
-        }))
-        .await
-        .unwrap();
+    fn open(
+        &self,
+        path: Option<&str>,
+        opts: sqlite_plugin::flags::OpenOpts,
+    ) -> sqlite_plugin::vfs::VfsResult<Self::Handle> {
+        todo!()
+    }
+
+    fn delete(&self, path: &str) -> sqlite_plugin::vfs::VfsResult<()> {
+        todo!()
+    }
+
+    fn access(
+        &self,
+        path: &str,
+        flags: sqlite_plugin::flags::AccessFlags,
+    ) -> sqlite_plugin::vfs::VfsResult<bool> {
+        todo!()
+    }
+
+    fn file_size(&self, handle: &mut Self::Handle) -> sqlite_plugin::vfs::VfsResult<usize> {
+        todo!()
+    }
+
+    fn truncate(
+        &self,
+        handle: &mut Self::Handle,
+        size: usize,
+    ) -> sqlite_plugin::vfs::VfsResult<()> {
+        todo!()
+    }
+
+    fn write(
+        &self,
+        handle: &mut Self::Handle,
+        offset: usize,
+        data: &[u8],
+    ) -> sqlite_plugin::vfs::VfsResult<usize> {
+        todo!()
+    }
+
+    fn read(
+        &self,
+        handle: &mut Self::Handle,
+        offset: usize,
+        data: &mut [u8],
+    ) -> sqlite_plugin::vfs::VfsResult<usize> {
+        todo!()
+    }
+
+    fn close(&self, handle: Self::Handle) -> sqlite_plugin::vfs::VfsResult<()> {
+        todo!()
     }
 }
