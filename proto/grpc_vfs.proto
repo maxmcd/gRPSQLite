@@ -62,7 +62,8 @@ message GetCapabilitiesRequest {
   // the GRPSQLITE_CLIENT_TOKEN environment variable.
   string client_token = 1;
 
-  // The file_name is the name of the database file, or the -wal or -wal2 file
+  // The file_name is the name of the database file, or the -wal or -wal2 file.
+  // For a pure sector_size request, this will be blank.
   string file_name = 2;
 
   // If the client is read only. If the server does not support point-in-time
@@ -88,7 +89,7 @@ message GetCapabilitiesResponse {
   bool wal2 = 4;
 
   // The sector size of the file system, generally 4096.
-  int64 sector_size = 5;
+  int32 sector_size = 5;
 }
 
 message AcquireLeaseRequest {

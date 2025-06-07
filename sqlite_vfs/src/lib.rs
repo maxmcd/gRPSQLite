@@ -11,7 +11,7 @@ struct Capabilities {
     atomic_batch: bool,
     point_in_time_reads: bool,
     wal2: bool,
-    sector_size: usize,
+    sector_size: i32,
 }
 
 struct GrpcVfs {
@@ -159,8 +159,8 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
     }
 
     fn sector_size(&self) -> i32 {
-        // TODO: tokio oncecell to get capabilities
-        todo!()
+        let capabilities = self.get_capabilities();
+        capabilities.sector_size as i32
     }
 }
 
@@ -176,11 +176,11 @@ impl GrpcVfs {
         client.unwrap().clone()
     }
 
-    fn get_capabilities(&self, file_name: &str) -> Capabilities {
+    fn get_capabilities(&self) -> Capabilities {
         let mut client = self.get_grpc_client();
         let req = GetCapabilitiesRequest {
             client_token: "test".to_string(), // TODO: get from env
-            file_name: file_name.to_string(),
+            file_name: "".to_string(),        // not relevante
             readonly: false,
         };
         let res = self
@@ -192,7 +192,7 @@ impl GrpcVfs {
             atomic_batch: caps.atomic_batch,
             point_in_time_reads: caps.point_in_time_reads,
             wal2: caps.wal2,
-            sector_size: caps.sector_size as usize,
+            sector_size: caps.sector_size,
         }
     }
 }
