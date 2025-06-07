@@ -44,8 +44,12 @@ message GetCapabilitiesRequest {
 }
 
 message GetCapabilitiesResponse {
-    // Return the capabilities that the server supports based on the context. Values are "atomic_batch", "pit_read", "wal2" (only if atomic_batch is not supported)
-    repeated string capabilities = 1;
+    // will force journal_mode=memory
+    bool atomic_batch = 1;
+    bool point_in_time_reads = 2;
+
+    // wal2 is only used if atomic_batch is not supported, and will enable journal_mode=wal2. If atomic_batch is not supported, and wal2 is not supported, then it will use journal_mode=wal.
+    bool wal2 = 3;
 }
 
 message AcquireLeaseRequest {
