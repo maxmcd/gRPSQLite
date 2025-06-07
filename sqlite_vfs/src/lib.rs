@@ -1,10 +1,26 @@
+use std::ffi::{CStr, c_char, c_int, c_void};
+
 use parking_lot::Mutex;
 
 tonic::include_proto!("grpc_vfs");
 
 mod handle;
 
-struct GrpcVfs {}
+struct GrpcVfs {
+    runtime: tokio::runtime::Runtime,
+    capabilities: tokio::sync::OnceCell<Vec<String>>, // TODO: make enum?
+}
+
+impl GrpcVfs {
+    pub fn new() -> Self {
+        Self {
+            runtime: tokio::runtime::Builder::new_current_thread()
+                .build()
+                .unwrap(), // SQLite is single-threaded, so we can use a single-threaded runtime
+            capabilities: tokio::sync::OnceCell::new(),
+        }
+    }
+}
 
 impl sqlite_plugin::vfs::Vfs for GrpcVfs {
     type Handle = handle::GrpcVfsHandle;
@@ -43,6 +59,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
         path: Option<&str>,
         opts: sqlite_plugin::flags::OpenOpts,
     ) -> sqlite_plugin::vfs::VfsResult<Self::Handle> {
+        // TODO: tokio oncecell to get capabilities
         todo!()
     }
 
@@ -91,4 +108,92 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
     fn close(&self, handle: Self::Handle) -> sqlite_plugin::vfs::VfsResult<()> {
         todo!()
     }
+
+    fn device_characteristics(&self) -> i32 {
+        // TODO: tokio oncecell to get capabilities
+        todo!()
+    }
+
+    fn pragma(
+        &self,
+        handle: &mut Self::Handle,
+        pragma: sqlite_plugin::vfs::Pragma<'_>,
+    ) -> Result<Option<String>, sqlite_plugin::vfs::PragmaErr> {
+        // log::debug!("pragma: file={:?}, pragma={:?}", handle.name, pragma);
+        Err(sqlite_plugin::vfs::PragmaErr::NotFound)
+    }
+
+    fn file_control(
+        &self,
+        handle: &mut Self::Handle,
+        op: c_int,
+        _p_arg: *mut c_void,
+    ) -> sqlite_plugin::vfs::VfsResult<()> {
+        // log::debug!("file_control: file={:?}, op={:?}", handle.name, op);
+        match op {
+            sqlite_plugin::vars::SQLITE_FCNTL_COMMIT_ATOMIC_WRITE => {
+                log::debug!("commit_atomic_write control given");
+                Ok(())
+            }
+            sqlite_plugin::vars::SQLITE_FCNTL_ROLLBACK_ATOMIC_WRITE => {
+                log::debug!("rollback_atomic_write control given");
+                Ok(())
+            }
+            sqlite_plugin::vars::SQLITE_FCNTL_BEGIN_ATOMIC_WRITE => {
+                log::debug!("begin_atomic_write control given");
+                Ok(())
+            }
+            _ => Err(sqlite_plugin::vars::SQLITE_NOTFOUND),
+        }
+    }
+}
+
+const VFS_NAME: &CStr = c"grpcvfs";
+
+/// This function initializes the VFS statically.
+/// Called automatically when the library is loaded.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn initialize_grpcvfs() -> i32 {
+    let vfs = GrpcVfs::new();
+
+    if let Err(err) = sqlite_plugin::vfs::register_static(
+        VFS_NAME.to_owned(),
+        vfs,
+        sqlite_plugin::vfs::RegisterOpts { make_default: true },
+    ) {
+        eprintln!("Failed to initialize grpcvfs: {}", err);
+        return err;
+    }
+
+    // set the log level to trace
+    log::set_max_level(log::LevelFilter::Trace);
+    sqlite_plugin::vars::SQLITE_OK
+}
+
+/// This function is called by `SQLite` when the extension is loaded. It registers
+/// the memvfs VFS with `SQLite`.
+/// # Safety
+/// This function should only be called by sqlite's extension loading mechanism.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn sqlite3_grpcvfs_init(
+    _db: *mut c_void,
+    _pz_err_msg: *mut *mut c_char,
+    p_api: *mut sqlite_plugin::sqlite3_api_routines,
+) -> std::os::raw::c_int {
+    let vfs = GrpcVfs::new();
+    if let Err(err) = unsafe {
+        sqlite_plugin::vfs::register_dynamic(
+            p_api,
+            VFS_NAME.to_owned(),
+            vfs,
+            sqlite_plugin::vfs::RegisterOpts { make_default: true },
+        )
+    } {
+        return err;
+    }
+
+    // set the log level to trace
+    log::set_max_level(log::LevelFilter::Trace);
+
+    sqlite_plugin::vars::SQLITE_OK_LOAD_PERMANENTLY
 }

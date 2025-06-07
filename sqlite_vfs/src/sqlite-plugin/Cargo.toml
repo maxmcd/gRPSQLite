@@ -33,12 +33,12 @@ default = ["static"]
 static = ["rusqlite"]
 dynamic = []
 
-[[example]]
-name = "memvfs"
-crate-type = ["cdylib"]
-required-features = ["dynamic"]
+# [[example]]
+# name = "memvfs"
+# crate-type = ["cdylib"]
+# required-features = ["dynamic"]
 
-[[example]]
-name = "memvfs_static"
-crate-type = ["staticlib"]
-required-features = ["static"]
+# [[example]]
+# name = "memvfs_static"
+# crate-type = ["staticlib"]
+# required-features = ["static"]
