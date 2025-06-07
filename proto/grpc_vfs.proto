@@ -31,7 +31,7 @@ service GRPC_VFS {
     // Pragma should run a pragma command for the file. This may not have a pragma_value. If it's a no-op, it should return a blank response.
     rpc Pragma(PragmaRequest) returns (PragmaResponse);
 
-    // Truncate should truncate the file to the given size if the provided lease is still valid.
+    // Truncate should truncate the file to the given size if the provided lease is still valid
     rpc Truncate(TruncateRequest) returns (google.protobuf.Empty);
 
     // Delete should delete the entire file content such that future reads will fail and future writes will create a new file if the provided lease is still valid
