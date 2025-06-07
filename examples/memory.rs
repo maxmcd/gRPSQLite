@@ -13,7 +13,12 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
         &self,
         _request: Request<grpsqlite::GetCapabilitiesRequest>,
     ) -> Result<Response<grpsqlite::GetCapabilitiesResponse>, Status> {
-        todo!()
+        return Ok(Response::new(grpsqlite::GetCapabilitiesResponse {
+            context: "memory".to_string(),
+            atomic_batch: true,
+            point_in_time_reads: true,
+            wal2: true,
+        }));
     }
 
     async fn acquire_lease(
