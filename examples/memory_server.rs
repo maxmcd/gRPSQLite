@@ -3,14 +3,16 @@
  *
  * Despite being all in-memory, clients can restart and still see the database, as long as the server has not been restarted.
  */
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex},
+};
 
-use std::{collections::HashMap, sync::{Arc, Mutex}};
-
-use tonic::{transport::Server, Request, Response, Status};
+use tonic::{Request, Response, Status, transport::Server};
 
 #[derive(Default, Debug)]
 pub struct MemoryVfs {
-  files: Arc<Mutex<HashMap<String, Vec<u8>>>>,
+    files: Arc<Mutex<HashMap<String, Vec<u8>>>>,
 }
 
 #[tonic::async_trait]
@@ -55,23 +57,67 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
 
     async fn read(
         &self,
-        _request: Request<grpsqlite::ReadRequest>,
+        request: Request<grpsqlite::ReadRequest>,
     ) -> Result<Response<grpsqlite::ReadResponse>, Status> {
-        todo!()
+        let inner = request.into_inner();
+        let files = self.files.lock().unwrap();
+        let file = files
+            .get(&inner.file_name)
+            .ok_or(Status::not_found("File not found"))?;
+
+        let offset = inner.offset as usize;
+        let length = inner.length as usize;
+
+        // Check if offset is beyond file size
+        if offset >= file.len() {
+            return Err(Status::out_of_range("Read offset beyond file size"));
+        }
+
+        // Calculate the actual end position (don't read beyond file size)
+        let end = std::cmp::min(offset + length, file.len());
+        let data = file[offset..end].to_vec();
+
+        Ok(Response::new(grpsqlite::ReadResponse {
+            data,
+            time_millis: 0, // no time
+        }))
     }
 
     async fn write(
         &self,
-        _request: Request<grpsqlite::WriteRequest>,
+        request: Request<grpsqlite::WriteRequest>,
     ) -> Result<Response<()>, Status> {
-        todo!()
+        let inner = request.into_inner();
+        let mut files = self.files.lock().unwrap();
+        let file = files.entry(inner.file_name).or_insert_with(Vec::new);
+        let offset = inner.offset as usize;
+
+        if offset + inner.data.len() > file.len() {
+            file.resize(offset + inner.data.len(), 0);
+        }
+        file[offset..offset + inner.data.len()].copy_from_slice(&inner.data);
+        Ok(Response::new(()))
     }
 
     async fn atomic_write_batch(
         &self,
-        _request: Request<grpsqlite::AtomicWriteBatchRequest>,
+        request: Request<grpsqlite::AtomicWriteBatchRequest>,
     ) -> Result<Response<()>, Status> {
-        todo!()
+        let inner = request.into_inner();
+        let mut files = self.files.lock().unwrap();
+        let file = files.entry(inner.file_name).or_insert_with(Vec::new);
+
+        // Apply all writes atomically
+        for write in inner.writes {
+            let offset = write.offset as usize;
+
+            if offset + write.data.len() > file.len() {
+                file.resize(offset + write.data.len(), 0);
+            }
+            file[offset..offset + write.data.len()].copy_from_slice(&write.data);
+        }
+
+        Ok(Response::new(()))
     }
 
     async fn get_file_size(
@@ -104,7 +150,9 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
     ) -> Result<Response<()>, Status> {
         let inner = request.into_inner();
         let mut files = self.files.lock().unwrap();
-        files.get_mut(&inner.file_name).map(|f| f.truncate(inner.size as usize));
+        files
+            .get_mut(&inner.file_name)
+            .map(|f| f.truncate(inner.size as usize));
         Ok(Response::new(()))
     }
 
@@ -126,9 +174,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let memory_vfs = MemoryVfs::default();
     let server = grpsqlite::grpsqlite_server::GrpsqliteServer::new(memory_vfs);
     println!("Server is running on {}", addr);
-    Server::builder()
-        .add_service(server)
-        .serve(addr)
-        .await?;
+    Server::builder().add_service(server).serve(addr).await?;
     Ok(())
 }
