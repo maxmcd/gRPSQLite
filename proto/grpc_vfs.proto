@@ -3,11 +3,11 @@ package grpc_vfs;
 
 import "google/protobuf/empty.proto";
 
-service GRPC_VFS {
-    // GetCapabilities should return the capabilities that the server supports based on the context. Called by RW and RO connections on startup.
+service GRPSQLite {
+    // GetCapabilities should return the capabilities that the server supports based on the context. Called by RW and RO connections on startup. This may be called multiple times for the same connection, as it is called for each file.
     rpc GetCapabilities(GetCapabilitiesRequest) returns (GetCapabilitiesResponse);
 
-    // AcquireLease should create a database if it doesn't exist, and acquire the lease, returning the lease info. This is only used for RW connections.
+    // AcquireLease should create a database if it doesn't exist, and acquire the lease, returning the lease info. This is only used for RW connections. If the lease is already held, this should return an error.
     rpc AcquireLease(AcquireLeaseRequest) returns (AcquireLeaseResponse);
 
     // Close should release the lease, or no-op if the lease is not held by this client
@@ -39,17 +39,26 @@ service GRPC_VFS {
 }
 
 message GetCapabilitiesRequest {
-    // The context is a string that is used to track the context of the client. For example auth token, user id, etc.
-    string context = 1;
+    // The client_token is a string that is used to track the client, provided in the GRPSQLITE_CLIENT_TOKEN environment variable.
+    string client_token = 1;
+
+    // The file_name is the name of the database file, or the -wal or -wal2 file
+    string file_name = 2;
+
+    // If the client is read only
+    bool readonly = 3;
 }
 
 message GetCapabilitiesResponse {
+    // The returned context that will be used for all future requests until the database is closed.
+    string context = 1;
+
     // will force journal_mode=memory
-    bool atomic_batch = 1;
-    bool point_in_time_reads = 2;
+    bool atomic_batch = 2;
+    bool point_in_time_reads = 3;
 
     // wal2 is only used if atomic_batch is not supported, and will enable journal_mode=wal2. If atomic_batch is not supported, and wal2 is not supported, then it will use journal_mode=wal.
-    bool wal2 = 3;
+    bool wal2 = 4;
 }
 
 message AcquireLeaseRequest {
