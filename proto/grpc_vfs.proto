@@ -10,19 +10,19 @@ service GRPC_VFS {
     // AcquireLease should create a database if it doesn't exist, and acquire the lease, returning the lease info. This is only used for RW connections.
     rpc AcquireLease(AcquireLeaseRequest) returns (AcquireLeaseResponse);
 
-    // Close should release the lease
+    // Close should release the lease, or no-op if the lease is not held by this client
     rpc Close(CloseRequest) returns (google.protobuf.Empty);
 
     // Heartbeat should refresh the lease, if it is still held by this client
     rpc Heartbeat(HeartbeatRequest) returns (google.protobuf.Empty);
 
-    // Read should read the data from the database, possibly from a point in time. If the point in time is not provided, and the server supports point-in-time reads, the server will provide one that should be used for future reads in the current transaction which should represent the time of the last write.
+    // Read data from the file, possibly from a point in time. If the point in time is not provided, and the server supports point-in-time reads, the server must provide one (that represents the time of the last write) that should be used for future reads in the current transaction.
     rpc Read(ReadRequest) returns (ReadResponse);
 
-    // Write durably writes the data to the database if the provided lease is still valid. This is used when the atomic_batch capability is not enabled. Creates the file if it doesn't exist.
+    // Write durably writes the data to the file if the provided lease is still valid. This is used when the atomic_batch capability is not enabled (but still may be called if enabled). Creates the file if it doesn't exist.
     rpc Write(WriteRequest) returns (google.protobuf.Empty);
 
-    // AtomicWriteBatch should durably write all the writes in the batch atomically if the provided lease is still valid. This is used when the atomic_batch capability is enabled. Creates the file if it doesn't exist.
+    // AtomicWriteBatch should durably write all the writes in the batch atomically if the provided lease is still valid. This is used when the atomic_batch capability is enabled. Creates the file if it doesn't exist. If the atomic_batch capability is not enabled, the server should return an error.
     rpc AtomicWriteBatch(AtomicWriteBatchRequest) returns (google.protobuf.Empty);
 
     // GetFileSize should return the size of the file
