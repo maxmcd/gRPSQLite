@@ -8,6 +8,8 @@ sqlite-plugin = "0.3.0"
 tonic = "0.13.1"
 prost = "0.13.5"
 tokio = { version = "1.45.1", features = ["full"] }
+log = { version = "0.4.27", features = ["std"] }
+parking_lot = "0.12.4"
 
 [build-dependencies]
 tonic-build = "0.13.1"

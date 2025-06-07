@@ -871,6 +871,8 @@ dependencies = [
 name = "sqlite_vfs"
 version = "0.1.0"
 dependencies = [
+ "log",
+ "parking_lot",
  "prost",
  "sqlite-plugin",
  "tokio",

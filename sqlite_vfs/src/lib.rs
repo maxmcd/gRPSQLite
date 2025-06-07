@@ -1,3 +1,5 @@
+use parking_lot::Mutex;
+
 tonic::include_proto!("grpc_vfs");
 
 mod handle;
@@ -8,7 +10,32 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
     type Handle = handle::GrpcVfsHandle;
 
     fn register_logger(&self, logger: sqlite_plugin::logger::SqliteLogger) {
-        todo!()
+        struct LogCompat {
+            logger: Mutex<sqlite_plugin::logger::SqliteLogger>,
+        }
+
+        impl log::Log for LogCompat {
+            fn enabled(&self, _metadata: &log::Metadata) -> bool {
+                true
+            }
+
+            fn log(&self, record: &log::Record) {
+                let level = match record.level() {
+                    log::Level::Error => sqlite_plugin::logger::SqliteLogLevel::Error,
+                    log::Level::Warn => sqlite_plugin::logger::SqliteLogLevel::Warn,
+                    _ => sqlite_plugin::logger::SqliteLogLevel::Notice,
+                };
+                let msg = format!("{}", record.args());
+                self.logger.lock().log(level, msg.as_bytes());
+            }
+
+            fn flush(&self) {}
+        }
+
+        let log = LogCompat {
+            logger: Mutex::new(logger),
+        };
+        log::set_boxed_logger(Box::new(log)).expect("failed to setup global logger");
     }
 
     fn open(
