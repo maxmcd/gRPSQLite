@@ -76,9 +76,11 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
             return Err(Status::out_of_range("Read offset beyond file size"));
         }
 
-        // Calculate the actual end position (don't read beyond file size)
-        let end = std::cmp::min(offset + length, file.len());
-        let data = file[offset..end].to_vec();
+        if offset + length > file.len() {
+            return Err(Status::out_of_range("Read length beyond file size"));
+        }
+
+        let data = file[offset..offset + length].to_vec();
 
         Ok(Response::new(grpsqlite::ReadResponse {
             data,
