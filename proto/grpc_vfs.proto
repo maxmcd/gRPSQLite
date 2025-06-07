@@ -44,7 +44,7 @@ message GetCapabilitiesRequest {
 }
 
 message GetCapabilitiesResponse {
-    // Return the capabilities that the server supports based on the context. Values are "atomic_batch", "pit_read", "wal2"
+    // Return the capabilities that the server supports based on the context. Values are "atomic_batch", "pit_read", "wal2" (only if atomic_batch is not supported)
     repeated string capabilities = 1;
 }
 
