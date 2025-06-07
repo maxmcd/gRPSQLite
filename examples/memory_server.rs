@@ -2,6 +2,8 @@
  * Example server that holds everything in memory.
  *
  * Despite being all in-memory, clients can restart and still see the database, as long as the server has not been restarted.
+ *
+ * One obvious omission in this server is that we are not checking leases or context (despite giving out unique IDs).
  */
 use std::{
     collections::HashMap,
@@ -9,6 +11,7 @@ use std::{
 };
 
 use tonic::{Request, Response, Status, transport::Server};
+use uuid::Uuid;
 
 #[derive(Default, Debug)]
 pub struct MemoryVfs {
@@ -22,7 +25,7 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
         _request: Request<grpsqlite::GetCapabilitiesRequest>,
     ) -> Result<Response<grpsqlite::GetCapabilitiesResponse>, Status> {
         return Ok(Response::new(grpsqlite::GetCapabilitiesResponse {
-            context: "memory".to_string(),
+            context: Uuid::new_v4().to_string(), // not used, example only
             atomic_batch: true,
             point_in_time_reads: false,
             wal2: false,
@@ -35,7 +38,7 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
     ) -> Result<Response<grpsqlite::AcquireLeaseResponse>, Status> {
         // no-op
         Ok(Response::new(grpsqlite::AcquireLeaseResponse {
-            lease_id: "-".to_string(), // we're not checking, so they don't need to be unique
+            lease_id: Uuid::new_v4().to_string(), // not checked, example only
         }))
     }
 
