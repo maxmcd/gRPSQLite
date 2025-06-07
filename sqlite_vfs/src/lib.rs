@@ -6,9 +6,19 @@ tonic::include_proto!("grpc_vfs");
 
 mod handle;
 
+struct Capabilities {
+    context: String,
+    atomic_batch: bool,
+    point_in_time_reads: bool,
+    wal2: bool,
+    sector_size: usize,
+}
+
 struct GrpcVfs {
     runtime: tokio::runtime::Runtime,
-    capabilities: tokio::sync::OnceCell<Vec<String>>, // TODO: make enum?
+    capabilities: tokio::sync::OnceCell<Capabilities>,
+    grpc_client:
+        tokio::sync::OnceCell<grpsqlite_client::GrpsqliteClient<tonic::transport::Channel>>,
 }
 
 impl GrpcVfs {
@@ -18,6 +28,7 @@ impl GrpcVfs {
                 .build()
                 .unwrap(), // SQLite is single-threaded, so we can use a single-threaded runtime
             capabilities: tokio::sync::OnceCell::new(),
+            grpc_client: tokio::sync::OnceCell::new(),
         }
     }
 }
@@ -144,6 +155,44 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                 Ok(())
             }
             _ => Err(sqlite_plugin::vars::SQLITE_NOTFOUND),
+        }
+    }
+
+    fn sector_size(&self) -> i32 {
+        // TODO: tokio oncecell to get capabilities
+        todo!()
+    }
+}
+
+impl GrpcVfs {
+    fn get_grpc_client(&self) -> grpsqlite_client::GrpsqliteClient<tonic::transport::Channel> {
+        let client = self.runtime.block_on(async {
+            self.grpc_client
+                .get_or_try_init(|| async {
+                    grpsqlite_client::GrpsqliteClient::connect("http://localhost:50051").await // TODO: get from env
+                })
+                .await
+        });
+        client.unwrap().clone()
+    }
+
+    fn get_capabilities(&self, file_name: &str) -> Capabilities {
+        let mut client = self.get_grpc_client();
+        let req = GetCapabilitiesRequest {
+            client_token: "test".to_string(), // TODO: get from env
+            file_name: file_name.to_string(),
+            readonly: false,
+        };
+        let res = self
+            .runtime
+            .block_on(async { client.get_capabilities(req).await });
+        let caps = res.unwrap().into_inner();
+        Capabilities {
+            context: caps.context,
+            atomic_batch: caps.atomic_batch,
+            point_in_time_reads: caps.point_in_time_reads,
+            wal2: caps.wal2,
+            sector_size: caps.sector_size as usize,
         }
     }
 }

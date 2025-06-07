@@ -29,6 +29,7 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
             atomic_batch: true,
             point_in_time_reads: false,
             wal2: false,
+            sector_size: 4096,
         }));
     }
 
