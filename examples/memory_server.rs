@@ -2,17 +2,15 @@
  * Example server that holds everything in memory.
  *
  * Despite being all in-memory, clients can restart and still see the database, as long as the server has not been restarted.
- *
- * There are no concurrency controls on this example, so it really is just for hello-world testing against a single client.
  */
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::{Arc, Mutex}};
 
 use tonic::{transport::Server, Request, Response, Status};
 
 #[derive(Default, Debug)]
 pub struct MemoryVfs {
-  files: HashMap<String, Vec<u8>>,
+  files: Arc<Mutex<HashMap<String, Vec<u8>>>>,
 }
 
 #[tonic::async_trait]
@@ -33,21 +31,26 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
         &self,
         _request: Request<grpsqlite::AcquireLeaseRequest>,
     ) -> Result<Response<grpsqlite::AcquireLeaseResponse>, Status> {
-        todo!()
+        // no-op
+        Ok(Response::new(grpsqlite::AcquireLeaseResponse {
+            lease_id: "-".to_string(), // we're not checking, so they don't need to be unique
+        }))
     }
 
     async fn close(
         &self,
         _request: Request<grpsqlite::CloseRequest>,
     ) -> Result<Response<()>, Status> {
-        todo!()
+        // no-op
+        Ok(Response::new(()))
     }
 
     async fn heartbeat_lease(
         &self,
         _request: Request<grpsqlite::HeartbeatLeaseRequest>,
     ) -> Result<Response<()>, Status> {
-        todo!()
+        // no-op
+        Ok(Response::new(()))
     }
 
     async fn read(
@@ -73,30 +76,46 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
 
     async fn get_file_size(
         &self,
-        _request: Request<grpsqlite::GetFileSizeRequest>,
+        request: Request<grpsqlite::GetFileSizeRequest>,
     ) -> Result<Response<grpsqlite::GetFileSizeResponse>, Status> {
-        todo!()
+        let file_name = request.into_inner().file_name;
+        let files = self.files.lock().unwrap();
+        Ok(Response::new(grpsqlite::GetFileSizeResponse {
+            size: files.get(&file_name).map(|f| f.len() as i64).unwrap_or(0),
+        }))
     }
 
     async fn pragma(
         &self,
-        _request: Request<grpsqlite::PragmaRequest>,
+        request: Request<grpsqlite::PragmaRequest>,
     ) -> Result<Response<grpsqlite::PragmaResponse>, Status> {
-        todo!()
+        let pragma_request = request.into_inner();
+        let pragma_name = &pragma_request.pragma_name;
+        let pragma_value = &pragma_request.pragma_value;
+        println!("pragma: {:?} {:?}", pragma_name, pragma_value);
+        Ok(Response::new(grpsqlite::PragmaResponse {
+            response: "".to_string(), // nothing returned
+        }))
     }
 
     async fn truncate(
         &self,
-        _request: Request<grpsqlite::TruncateRequest>,
+        request: Request<grpsqlite::TruncateRequest>,
     ) -> Result<Response<()>, Status> {
-        todo!()
+        let inner = request.into_inner();
+        let mut files = self.files.lock().unwrap();
+        files.get_mut(&inner.file_name).map(|f| f.truncate(inner.size as usize));
+        Ok(Response::new(()))
     }
 
     async fn delete(
         &self,
-        _request: Request<grpsqlite::DeleteRequest>,
+        request: Request<grpsqlite::DeleteRequest>,
     ) -> Result<Response<()>, Status> {
-        todo!()
+        let inner = request.into_inner();
+        let mut files = self.files.lock().unwrap();
+        files.remove(&inner.file_name);
+        Ok(Response::new(()))
     }
 }
 
