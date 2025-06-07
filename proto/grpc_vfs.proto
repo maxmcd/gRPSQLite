@@ -13,8 +13,8 @@ service GRPSQLite {
     // Close should release the lease, or no-op if the lease is not held by this client
     rpc Close(CloseRequest) returns (google.protobuf.Empty);
 
-    // Heartbeat should refresh the lease, if it is still held by this client
-    rpc Heartbeat(HeartbeatRequest) returns (google.protobuf.Empty);
+    // HeartbeatLease should refresh the lease, if it is still held by this client
+    rpc HeartbeatLease(HeartbeatLeaseRequest) returns (google.protobuf.Empty);
 
     // Read data from the file, possibly from a point in time. If the point in time is not provided, and the server supports point-in-time reads, the server must provide one (that represents the time of the last write) that should be used for future reads in the current transaction.
     rpc Read(ReadRequest) returns (ReadResponse);
@@ -76,7 +76,7 @@ message CloseRequest {
     string lease_id = 2;
 }
 
-message HeartbeatRequest {
+message HeartbeatLeaseRequest {
     string context = 1;
     string lease_id = 2;
 }
