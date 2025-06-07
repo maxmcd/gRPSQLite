@@ -1,0 +1,150 @@
+syntax = "proto3";
+package grpc_vfs;
+
+import "google/protobuf/empty.proto";
+
+service GRPC_VFS {
+    // GetCapabilities should return the capabilities that the server supports based on the context. Called by RW and RO connections on startup.
+    rpc GetCapabilities(GetCapabilitiesRequest) returns (GetCapabilitiesResponse);
+
+    // AcquireLease should create a database if it doesn't exist, and acquire the lease, returning the lease info. This is only used for RW connections.
+    rpc AcquireLease(AcquireLeaseRequest) returns (AcquireLeaseResponse);
+
+    // Close should release the lease
+    rpc Close(CloseRequest) returns (google.protobuf.Empty);
+
+    // Heartbeat should refresh the lease, if it is still held by this client
+    rpc Heartbeat(HeartbeatRequest) returns (google.protobuf.Empty);
+
+    // Read should read the data from the database, possibly from a point in time. If the point in time is not provided, and the server supports point-in-time reads, the server will provide one that should be used for future reads in the current transaction which should represent the time of the last write.
+    rpc Read(ReadRequest) returns (ReadResponse);
+
+    // Write durably writes the data to the database if the provided lease is still valid. This is used when the atomic_batch capability is not enabled. Creates the file if it doesn't exist.
+    rpc Write(WriteRequest) returns (google.protobuf.Empty);
+
+    // AtomicWriteBatch should durably write all the writes in the batch atomically if the provided lease is still valid. This is used when the atomic_batch capability is enabled. Creates the file if it doesn't exist.
+    rpc AtomicWriteBatch(AtomicWriteBatchRequest) returns (google.protobuf.Empty);
+
+    // GetFileSize should return the size of the file
+    rpc GetFileSize(GetFileSizeRequest) returns (GetFileSizeResponse);
+
+    // Pragma should run a pragma command for the file. This may not have a pragma_value. If it's a no-op, it should return a blank response.
+    rpc Pragma(PragmaRequest) returns (PragmaResponse);
+
+    // Truncate should truncate the file to the given size if the provided lease is still valid.
+    rpc Truncate(TruncateRequest) returns (google.protobuf.Empty);
+
+    // Delete should delete the entire file content such that future reads will fail and future writes will create a new file if the provided lease is still valid
+    rpc Delete(DeleteRequest) returns (google.protobuf.Empty);
+}
+
+message GetCapabilitiesRequest {
+    // The context is a string that is used to track the context of the client. For example auth token, user id, etc.
+    string context = 1;
+}
+
+message GetCapabilitiesResponse {
+    // Return the capabilities that the server supports based on the context. Values are "atomic_batch", "pit_read", "wal2"
+    repeated string capabilities = 1;
+}
+
+message AcquireLeaseRequest {
+    string context = 1;
+    string database = 2;
+}
+
+message AcquireLeaseResponse {
+    // The lease id is the id of the lease that was acquired for a RW connection.
+    string lease_id = 1;
+}
+
+message CloseRequest {
+    string context = 1;
+    string lease_id = 2;
+}
+
+message HeartbeatRequest {
+    string context = 1;
+    string lease_id = 2;
+}
+
+message ReadRequest {
+    string context = 1;
+    string lease_id = 2;
+    // This will be the name of the database file, or the -wal or -wal2 file
+    string file_name = 3;
+    int64 offset = 4;
+    int64 length = 6;
+
+    // The point in time in unix milliseconds to read from if the server supports point-in-time reads. If not provided, the server will provide one that should be used for future reads in the current transaction
+    int64 time_millis = 7;
+}
+
+message ReadResponse {
+    bytes data = 1;
+
+    // The point in time in unix milliseconds to continue to read from in the current transaction if the server supports point-in-time reads.
+    int64 time_millis = 2;
+}
+
+message WriteRequest {
+    string context = 1;
+    string lease_id = 2;
+    // This will be the name of the database file, or the -wal or -wal2 file
+    string file_name = 3;
+    int64 offset = 4;
+    bytes data = 6;
+}
+
+message AtomicWrite {
+    string context = 1;
+    string lease_id = 2;
+    int64 offset = 3;
+    bytes data = 4;
+}
+
+message AtomicWriteBatchRequest {
+    string context = 1;
+    string lease_id = 2;
+    string file_name = 3;
+    repeated AtomicWrite writes = 4;
+}
+
+message GetFileSizeRequest {
+    string context = 1;
+    string lease_id = 2;
+    // This will be the name of the database file, or the -wal or -wal2 file
+    string file_name = 3;
+}
+
+message GetFileSizeResponse {
+    int64 size = 1;
+}
+
+message PragmaRequest {
+    string context = 1;
+    string lease_id = 2;
+    // This will be the name of the database file, or the -wal or -wal2 file (if the pragma is for the wal or wal2 file)
+    string file_name = 3;
+    string pragma_name = 4;
+    string pragma_value = 5;
+}
+
+message PragmaResponse {
+    string response = 1;
+}
+
+message TruncateRequest {
+    string context = 1;
+    string lease_id = 2;
+    // This will be the name of the database file, or the -wal or -wal2 file
+    string file_name = 3;
+    int64 size = 5;
+}
+
+message DeleteRequest {
+    string context = 1;
+    string lease_id = 2;
+    // This will be the name of the database file, or the -wal or -wal2 file
+    string file_name = 3;
+}
