@@ -5,3 +5,8 @@ edition = "2024"
 
 [dependencies]
 sqlite-plugin = "0.3.0"
+tonic = "0.13.1"
+prost = "0.13.5"
+
+[build-dependencies]
+tonic-build = "0.13.1"
