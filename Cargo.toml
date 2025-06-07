@@ -1,8 +1,16 @@
 [package]
-name = "gRPCSQLite"
+name = "grpsqlite"
 version = "0.1.0"
 edition = "2024"
+
+[dependencies]
+tokio = { version = "1.45.1", features = ["full"] }
+tonic = "0.13.1"
+prost = "0.13.5"
 
 [workspace]
 resolver = "3"
 members = ["sqlite_vfs"]
+
+[build-dependencies]
+tonic-build = "0.13.1"
