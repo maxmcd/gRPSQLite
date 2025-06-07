@@ -7,7 +7,6 @@ tonic::include_proto!("grpc_vfs");
 mod handle;
 
 struct Capabilities {
-    context: String,
     atomic_batch: bool,
     point_in_time_reads: bool,
     wal2: bool,
@@ -16,19 +15,49 @@ struct Capabilities {
 
 struct GrpcVfs {
     runtime: tokio::runtime::Runtime,
-    capabilities: tokio::sync::OnceCell<Capabilities>,
-    grpc_client:
-        tokio::sync::OnceCell<grpsqlite_client::GrpsqliteClient<tonic::transport::Channel>>,
+    capabilities: Capabilities,
+    grpc_client: grpsqlite_client::GrpsqliteClient<tonic::transport::Channel>,
+    context: String,
 }
 
 impl GrpcVfs {
     pub fn new() -> Self {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap(); // SQLite is single-threaded, so we can use a single-threaded runtime
+
+        let (client, capabilities, context) = runtime.block_on(async {
+            let mut client = grpsqlite_client::GrpsqliteClient::connect(
+                std::env::var("GRPC_VFS_URL")
+                    .unwrap_or_else(|_| "http://localhost:50051".to_string()),
+            )
+            .await
+            .unwrap();
+
+            let req = GetCapabilitiesRequest {
+                client_token: std::env::var("GRPC_VFS_CLIENT_TOKEN")
+                    .unwrap_or_else(|_| "".to_string()),
+                file_name: "".to_string(), // not relevant
+                readonly: false,
+            };
+
+            let res = client.get_capabilities(req).await;
+            let capabilities_response = res.unwrap().into_inner();
+            let capabilities = Capabilities {
+                atomic_batch: capabilities_response.atomic_batch,
+                point_in_time_reads: capabilities_response.point_in_time_reads,
+                wal2: capabilities_response.wal2,
+                sector_size: capabilities_response.sector_size,
+            };
+
+            (client, capabilities, capabilities_response.context)
+        });
+
         Self {
-            runtime: tokio::runtime::Builder::new_current_thread()
-                .build()
-                .unwrap(), // SQLite is single-threaded, so we can use a single-threaded runtime
-            capabilities: tokio::sync::OnceCell::new(),
-            grpc_client: tokio::sync::OnceCell::new(),
+            runtime,
+            context,
+            capabilities,
+            grpc_client: client,
         }
     }
 }
@@ -159,41 +188,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
     }
 
     fn sector_size(&self) -> i32 {
-        let capabilities = self.get_capabilities();
-        capabilities.sector_size as i32
-    }
-}
-
-impl GrpcVfs {
-    fn get_grpc_client(&self) -> grpsqlite_client::GrpsqliteClient<tonic::transport::Channel> {
-        let client = self.runtime.block_on(async {
-            self.grpc_client
-                .get_or_try_init(|| async {
-                    grpsqlite_client::GrpsqliteClient::connect("http://localhost:50051").await // TODO: get from env
-                })
-                .await
-        });
-        client.unwrap().clone()
-    }
-
-    fn get_capabilities(&self) -> Capabilities {
-        let mut client = self.get_grpc_client();
-        let req = GetCapabilitiesRequest {
-            client_token: "test".to_string(), // TODO: get from env
-            file_name: "".to_string(),        // not relevante
-            readonly: false,
-        };
-        let res = self
-            .runtime
-            .block_on(async { client.get_capabilities(req).await });
-        let capabilities = res.unwrap().into_inner();
-        Capabilities {
-            context: capabilities.context,
-            atomic_batch: capabilities.atomic_batch,
-            point_in_time_reads: capabilities.point_in_time_reads,
-            wal2: capabilities.wal2,
-            sector_size: capabilities.sector_size,
-        }
+        self.capabilities.sector_size
     }
 }
 
