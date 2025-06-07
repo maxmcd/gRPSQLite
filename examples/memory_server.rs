@@ -1,3 +1,11 @@
+/**
+ * Example server that holds everything in memory.
+ *
+ * Despite being all in-memory, clients can restart and still see the database, as long as the server has not been restarted.
+ *
+ * There are no concurrency controls on this example, so it really is just for hello-world testing against a single client.
+ */
+
 use std::collections::HashMap;
 
 use tonic::{transport::Server, Request, Response, Status};
