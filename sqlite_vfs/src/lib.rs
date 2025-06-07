@@ -6,7 +6,7 @@ tonic::include_proto!("grpc_vfs");
 
 #[cfg(test)]
 mod tests {
-    use crate::{grpsq_lite_client::GrpsqLiteClient, GetCapabilitiesRequest};
+    use crate::{grpsqlite_client::GrpsqliteClient, GetCapabilitiesRequest};
     use tonic::Request;
 
     use super::*;
@@ -18,7 +18,7 @@ mod tests {
 
 
         // test creating the client
-        let mut client = GrpsqLiteClient::connect("http://localhost:50051").await.unwrap();
+        let mut client = GrpsqliteClient::connect("http://localhost:50051").await.unwrap();
         client.get_capabilities(Request::new(GetCapabilitiesRequest {
             client_token: "".to_string(),
             file_name: "".to_string(),

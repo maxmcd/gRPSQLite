@@ -3,7 +3,7 @@ package grpc_vfs;
 
 import "google/protobuf/empty.proto";
 
-service GRPSQLite {
+service Grpsqlite {
     // GetCapabilities should return the capabilities that the server supports based on the context. Called by RW and RO connections on startup. This may be called multiple times for the same connection, as it is called for each file.
     rpc GetCapabilities(GetCapabilitiesRequest) returns (GetCapabilitiesResponse);
 

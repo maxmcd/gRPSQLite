@@ -8,7 +8,7 @@ pub struct MemoryVfs {
 }
 
 #[tonic::async_trait]
-impl grpsqlite::grpsq_lite_server::GrpsqLite for MemoryVfs {
+impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
     async fn get_capabilities(
         &self,
         _request: Request<grpsqlite::GetCapabilitiesRequest>,
@@ -92,7 +92,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create a grpc server and run it
     let addr = "127.0.0.1:50051".parse().unwrap();
     let memory_vfs = MemoryVfs::default();
-    let server = grpsqlite::grpsq_lite_server::GrpsqLiteServer::new(memory_vfs);
+    let server = grpsqlite::grpsqlite_server::GrpsqliteServer::new(memory_vfs);
     println!("Server is running on {}", addr);
     Server::builder()
         .add_service(server)
