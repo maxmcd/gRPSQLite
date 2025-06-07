@@ -27,12 +27,21 @@ impl GrpcVfs {
             .unwrap(); // SQLite is single-threaded, so we can use a single-threaded runtime
 
         let (client, capabilities, context) = runtime.block_on(async {
-            let mut client = grpsqlite_client::GrpsqliteClient::connect(
-                std::env::var("GRPC_VFS_URL")
-                    .unwrap_or_else(|_| "http://localhost:50051".to_string()),
-            )
-            .await
-            .unwrap();
+            let url = std::env::var("GRPC_VFS_URL")
+                .unwrap_or_else(|_| "http://localhost:50051".to_string());
+
+            let connect_timeout_secs = std::env::var("GRPC_VFS_CONNECT_TIMEOUT_SECS")
+                .ok()
+                .and_then(|s| s.parse::<u64>().ok())
+                .unwrap_or(10);
+
+            let endpoint = tonic::transport::Endpoint::from_shared(url)
+                .unwrap()
+                .connect_timeout(std::time::Duration::from_secs(connect_timeout_secs));
+
+            let mut client = grpsqlite_client::GrpsqliteClient::connect(endpoint)
+                .await
+                .unwrap();
 
             let req = GetCapabilitiesRequest {
                 client_token: std::env::var("GRPC_VFS_CLIENT_TOKEN")
