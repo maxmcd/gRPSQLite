@@ -16,8 +16,8 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
         return Ok(Response::new(grpsqlite::GetCapabilitiesResponse {
             context: "memory".to_string(),
             atomic_batch: true,
-            point_in_time_reads: true,
-            wal2: true,
+            point_in_time_reads: false,
+            wal2: false,
         }));
     }
 
