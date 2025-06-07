@@ -186,13 +186,13 @@ impl GrpcVfs {
         let res = self
             .runtime
             .block_on(async { client.get_capabilities(req).await });
-        let caps = res.unwrap().into_inner();
+        let capabilities = res.unwrap().into_inner();
         Capabilities {
-            context: caps.context,
-            atomic_batch: caps.atomic_batch,
-            point_in_time_reads: caps.point_in_time_reads,
-            wal2: caps.wal2,
-            sector_size: caps.sector_size,
+            context: capabilities.context,
+            atomic_batch: capabilities.atomic_batch,
+            point_in_time_reads: capabilities.point_in_time_reads,
+            wal2: capabilities.wal2,
+            sector_size: capabilities.sector_size,
         }
     }
 }
