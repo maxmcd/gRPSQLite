@@ -8,6 +8,17 @@ Uses real SQLite, so it works with everything that SQLite does (packages, extens
 
 _Yes, the name is a pun._
 
+## Table of Contents
+
+- [gRPSQLite](#grpsqlite)
+  - [Table of Contents](#table-of-contents)
+  - [How it works](#how-it-works)
+  - [Atomic batch commits](#atomic-batch-commits)
+  - [Read-only Replicas](#read-only-replicas)
+  - [Developing](#developing)
+    - [Test with memory VFS example](#test-with-memory-vfs-example)
+
+
 ## How it works
 
 The provided VFS converts SQLite VFS calls to gRPC calls so that you can effectively implement a SQLite VFS via gRPC.
@@ -34,7 +45,7 @@ The `memory` journal mode is ideal for 3 reasons:
 
 1. We don't need a WAL anymore, because we atomically commit the whole transaction (your backing store likely has its own WAL)
 2. Because there are no WAL writes, there is no WAL checkpointing, meaning we never have to double-write committed transactions
-3. Your gRPC server implementation can expect only a single database file (the VFS only requests the lease against the main database file. If the file used doesn't match the file from the lease, it's not the main DB file.)
+3. Your gRPC server implementation can expect only a single database file, and reject bad clients using the wrong journal mode (if the file doesn't match the file that created the lease)
 
 ## Read-only Replicas
 
