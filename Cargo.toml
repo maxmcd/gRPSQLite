@@ -8,6 +8,7 @@ tokio = { version = "1.45.1", features = ["full"] }
 tonic = "0.13.1"
 prost = "0.13.5"
 uuid = { version = "1.17.0", features = ["v4"] }
+log = { version = "0.4.27", features = ["std"] }
 
 [[example]]
 name = "memory_server"
