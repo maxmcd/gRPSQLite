@@ -1,4 +1,5 @@
 use std::ffi::{CStr, c_char, c_int, c_void};
+use std::sync::Arc;
 
 use parking_lot::Mutex;
 
@@ -17,6 +18,7 @@ struct GrpcVfs {
     capabilities: Capabilities,
     grpc_client: grpsqlite_client::GrpsqliteClient<tonic::transport::Channel>,
     context: String,
+    files: Arc<Mutex<Vec<handle::GrpcVfsHandle>>>,
 }
 
 impl GrpcVfs {
@@ -65,6 +67,7 @@ impl GrpcVfs {
             context,
             capabilities,
             grpc_client: client,
+            files: Arc::new(Mutex::new(vec![])),
         }
     }
 }
@@ -107,10 +110,9 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
         opts: sqlite_plugin::flags::OpenOpts,
     ) -> sqlite_plugin::vfs::VfsResult<Self::Handle> {
         let mode = opts.mode();
-        Ok(handle::GrpcVfsHandle::new(
-            path.unwrap_or("").to_string(),
-            mode.is_readonly(),
-        ))
+        let handle = handle::GrpcVfsHandle::new(path.unwrap_or("").to_string(), mode.is_readonly());
+        self.files.lock().push(handle.clone());
+        Ok(handle)
     }
 
     fn delete(&self, path: &str) -> sqlite_plugin::vfs::VfsResult<()> {
@@ -122,7 +124,8 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
         path: &str,
         flags: sqlite_plugin::flags::AccessFlags,
     ) -> sqlite_plugin::vfs::VfsResult<bool> {
-        todo!()
+        log::debug!("access: path={}, flags={:?}", path, flags);
+        Ok(self.files.lock().iter().any(|f| f.file_path == path))
     }
 
     fn file_size(&self, handle: &mut Self::Handle) -> sqlite_plugin::vfs::VfsResult<usize> {
@@ -156,7 +159,10 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
     }
 
     fn close(&self, handle: Self::Handle) -> sqlite_plugin::vfs::VfsResult<()> {
-        todo!()
+        let mut files = self.files.lock();
+        files.retain(|f| f.file_path != handle.file_path);
+        // TODO: release the lease
+        Ok(())
     }
 
     fn device_characteristics(&self) -> i32 {

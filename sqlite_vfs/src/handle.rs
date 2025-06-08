@@ -1,3 +1,4 @@
+#[derive(Clone)]
 pub struct GrpcVfsHandle {
     pub file_path: String,
     read_only: bool,
