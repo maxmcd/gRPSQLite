@@ -87,7 +87,7 @@ The provided VFS manages a lot of other features for you like atomic batch commi
 
 Your gRPC server can then enable the various features based on the backing datastore you use.
 
-For example, if you use a database like FoundationDB that supports both atomic transactions, as well as point-in-time reads, you get the benefits of wildly more efficient SQLite atomic commits (writes the whole transaction at once, rather than unwinding writes to a journal), and support for read-only SQLite instances.
+For example, if you use a database like FoundationDB that supports both atomic transactions, as well as point-in-time reads, you get the benefits of wildly more efficient SQLite atomic commits (writes the whole transaction at once, rather than writing uncommitted rows to a journal), and support for read-only SQLite instances.
 
 This supports a single read-write instance per database, and if your backing store supports it, unlimited read-only replicas.
 
