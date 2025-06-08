@@ -8,6 +8,14 @@ RUN apt-get update && \
     wget unzip build-essential tcl-dev zlib1g-dev && \
     rm -rf /var/lib/apt/lists/*
 
+# Install protoc from pre-compiled binaries (more reliable than package manager)
+RUN PB_REL="https://github.com/protocolbuffers/protobuf/releases" && \
+    PB_VERSION="28.3" && \
+    wget $PB_REL/download/v$PB_VERSION/protoc-$PB_VERSION-linux-x86_64.zip && \
+    unzip protoc-$PB_VERSION-linux-x86_64.zip -d /usr/local && \
+    rm protoc-$PB_VERSION-linux-x86_64.zip && \
+    protoc --version
+
 # Define SQLite version to install (3.45.3 as an example, which is > 3.44.0)
 # You can update these ARGs if a newer SQLite version is needed/preferred
 ARG SQLITE_YEAR=2025
