@@ -163,6 +163,8 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
             characteristics |= sqlite_plugin::vars::SQLITE_IOCAP_BATCH_ATOMIC;
         }
 
+        // Do we bother with SQLITE_IOCAP_IMMUTABLE if we're opened in read only mode?
+
         characteristics
     }
 
