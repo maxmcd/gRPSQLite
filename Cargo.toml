@@ -13,6 +13,9 @@ log = { version = "0.4.27", features = ["std"] }
 [[example]]
 name = "memory_server"
 
+[[example]]
+name = "memory_server_no_atomic"
+
 [workspace]
 resolver = "3"
 members = ["sqlite_vfs"]
