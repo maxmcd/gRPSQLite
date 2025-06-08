@@ -1,8 +1,6 @@
 # gRPSQLite
 
-gRPC + SQLite
-
-Build multitenant, metered, bottomless, infinite SQLite databases backed by anything you can dream of. Implement by making a gRPC server and using a pre-made VFS.
+gRPC + SQLite enabling you to easily build multitenant, metered, bottomless, infinite SQLite databases backed by anything you can dream of.  Implement by making a gRPC server and using a pre-made VFS.
 
 Give every user, human or AI, as many SQLite databases as they want.
 
@@ -21,6 +19,22 @@ Your gRPC server can then enable the various features based on the backing datas
 For example, if you use a database like FoundationDB that supports both atomic transactions, as well as point-in-time reads, you get the benefits of wildly more efficient SQLite atomic commits (writes the whole transaction at once, rather than unwinding writes to a journal), and support for read-only SQLite instances.
 
 This supports a single read-write instance per database, and if your backing store supports it, unlimited read-only replicas.
+
+## Atomic batch commits
+
+If your server supports atomic batch commits (basically any DB that can do a transaction), this results in _wildly_ faster SQLite transactions.
+
+By default, SQLite (in wal/wal2 mode) will write uncommitted transactions to the WAL file, and rely on a commit frame to determine whether the transaction actually committed.
+
+When the server supports atomic batch commits, the SQLite VFS will instead memory-buffer writes, then on commit send a single batch-write to the server. As you can guess now, this is _a lot faster_.
+
+If your server supports this, you should always use the `memory` VFS for clients. If you don't, then you should set `pragma locking_mode=exclusive` and `pragma journal_mode=wal` (or `wal2`).
+
+The `memory` journal mode is ideal for 3 reasons:
+
+1. We don't need a WAL anymore, because we atomically commit the whole transaction (your backing store likely has its own WAL)
+2. Because there are no WAL writes, there is no WAL checkpointing, meaning we never have to double-write committed transactions
+3. Your gRPC server implementation can expect only a single database file (the VFS only requests the lease against the main database file. If the file used doesn't match the file from the lease, it's not the main DB file.)
 
 ## Read-only Replicas
 

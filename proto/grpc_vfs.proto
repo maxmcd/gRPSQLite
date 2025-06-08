@@ -12,7 +12,11 @@ service Grpsqlite {
 
   // AcquireLease should create a database if it doesn't exist, and acquire the
   // lease, returning the lease info. This is only used for RW connections. If
-  // the lease is already held, this should return an error.
+  // the lease is already held, this should return an error. This is only called
+  // against the main database file. Other files might use this lease, but they
+  // will likely have a -wal or -wal2 file name suffix. Storing the file name
+  // from the AcquireLeaseRequest is a good practice in case you want to be able
+  // to reject bad clients using the wrong journal_mode.
   rpc AcquireLease(AcquireLeaseRequest) returns (AcquireLeaseResponse);
 
   // Close should release the lease, or no-op if the lease is not held by this
