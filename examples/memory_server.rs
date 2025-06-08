@@ -24,7 +24,7 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
         &self,
         _request: Request<grpsqlite::GetCapabilitiesRequest>,
     ) -> Result<Response<grpsqlite::GetCapabilitiesResponse>, Status> {
-        log::debug!("get_capabilities");
+        println!("get_capabilities");
         return Ok(Response::new(grpsqlite::GetCapabilitiesResponse {
             context: Uuid::new_v4().to_string(), // not used, example only
             atomic_batch: true,
@@ -37,7 +37,7 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
         &self,
         request: Request<grpsqlite::AcquireLeaseRequest>,
     ) -> Result<Response<grpsqlite::AcquireLeaseResponse>, Status> {
-        log::debug!("acquire_lease");
+        println!("acquire_lease");
         let inner = request.into_inner();
         let mut files = self.files.lock().unwrap();
 
@@ -54,7 +54,7 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
         request: Request<grpsqlite::CloseRequest>,
     ) -> Result<Response<()>, Status> {
         let inner = request.into_inner();
-        log::debug!("close context={}", inner.context);
+        println!("close context={}", inner.context);
         // no-op
         Ok(Response::new(()))
     }
@@ -64,10 +64,9 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
         request: Request<grpsqlite::HeartbeatLeaseRequest>,
     ) -> Result<Response<()>, Status> {
         let inner = request.into_inner();
-        log::debug!(
+        println!(
             "heartbeat_lease context={} id={}",
-            inner.context,
-            inner.lease_id
+            inner.context, inner.lease_id
         );
         // no-op
         Ok(Response::new(()))
@@ -78,12 +77,9 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
         request: Request<grpsqlite::ReadRequest>,
     ) -> Result<Response<grpsqlite::ReadResponse>, Status> {
         let inner = request.into_inner();
-        log::debug!(
+        println!(
             "read context={} file={} offset={} length={}",
-            inner.context,
-            inner.file_name,
-            inner.offset,
-            inner.length
+            inner.context, inner.file_name, inner.offset, inner.length
         );
         let files = self.files.lock().unwrap();
         let file = files
@@ -121,7 +117,7 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
         request: Request<grpsqlite::WriteRequest>,
     ) -> Result<Response<()>, Status> {
         let inner = request.into_inner();
-        log::debug!(
+        println!(
             "write context={} file={} offset={} length={}",
             inner.context,
             inner.file_name,
@@ -144,10 +140,9 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
         request: Request<grpsqlite::AtomicWriteBatchRequest>,
     ) -> Result<Response<()>, Status> {
         let inner = request.into_inner();
-        log::debug!(
+        println!(
             "atomic_write_batch context={} file={}",
-            inner.context,
-            inner.file_name
+            inner.context, inner.file_name
         );
         let mut files = self.files.lock().unwrap();
         let file = files.entry(inner.file_name).or_insert_with(Vec::new);
@@ -170,10 +165,9 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
         request: Request<grpsqlite::GetFileSizeRequest>,
     ) -> Result<Response<grpsqlite::GetFileSizeResponse>, Status> {
         let inner = request.into_inner();
-        log::debug!(
+        println!(
             "get_file_size context={} file={}",
-            inner.context,
-            inner.file_name
+            inner.context, inner.file_name
         );
         let file_name = inner.file_name;
         let files = self.files.lock().unwrap();
@@ -187,11 +181,9 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
         request: Request<grpsqlite::PragmaRequest>,
     ) -> Result<Response<grpsqlite::PragmaResponse>, Status> {
         let pragma_request = request.into_inner();
-        log::debug!(
+        println!(
             "pragma context={} pragma={} value={}",
-            pragma_request.context,
-            pragma_request.pragma_name,
-            pragma_request.pragma_value
+            pragma_request.context, pragma_request.pragma_name, pragma_request.pragma_value
         );
         Ok(Response::new(grpsqlite::PragmaResponse {
             response: "".to_string(), // nothing returned
@@ -203,11 +195,9 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
         request: Request<grpsqlite::TruncateRequest>,
     ) -> Result<Response<()>, Status> {
         let inner = request.into_inner();
-        log::debug!(
+        println!(
             "truncate context={} file={} size={}",
-            inner.context,
-            inner.file_name,
-            inner.size
+            inner.context, inner.file_name, inner.size
         );
         let mut files = self.files.lock().unwrap();
         files
@@ -221,7 +211,7 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
         request: Request<grpsqlite::DeleteRequest>,
     ) -> Result<Response<()>, Status> {
         let inner = request.into_inner();
-        log::debug!("delete context={} file={}", inner.context, inner.file_name);
+        println!("delete context={} file={}", inner.context, inner.file_name);
         let mut files = self.files.lock().unwrap();
         files.remove(&inner.file_name);
         Ok(Response::new(()))
