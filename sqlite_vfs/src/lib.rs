@@ -70,8 +70,6 @@ impl GrpcVfs {
                 sector_size: capabilities_response.sector_size,
             };
 
-            // TODO: get the lease, launch heartbeat task (or thread?)
-
             (client, capabilities, capabilities_response.context)
         });
 
@@ -142,17 +140,23 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                     database: path.unwrap_or("").to_string(),
                 };
 
-                match self.grpc_client.clone().acquire_lease(req).await {
-                    Ok(response) => {
-                        let lease_response = response.into_inner();
-                        log::debug!("lease acquired: {:?}", lease_response.lease_id);
-                        *self.lease.lock() = Some(lease_response.lease_id);
-                        Ok(())
+                if opts.kind() == sqlite_plugin::flags::OpenKind::MainDb {
+                    log::debug!("acquiring lease for main db {}", path.unwrap_or(""));
+                    match self.grpc_client.clone().acquire_lease(req).await {
+                        Ok(response) => {
+                            let lease_response = response.into_inner();
+                            log::debug!("lease acquired: {:?}", lease_response.lease_id);
+                            *self.lease.lock() = Some(lease_response.lease_id);
+                            Ok(())
+                        }
+                        Err(status) => {
+                            log::error!("failed to acquire lease: {:?}", status);
+                            Err(sqlite_plugin::vars::SQLITE_CANTOPEN)
+                        }
                     }
-                    Err(status) => {
-                        log::error!("failed to acquire lease: {:?}", status);
-                        Err(sqlite_plugin::vars::SQLITE_CANTOPEN)
-                    }
+                    // TODO: launch heartbeat task (or thread?)
+                } else {
+                    Ok(())
                 }
             });
 
