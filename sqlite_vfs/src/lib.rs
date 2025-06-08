@@ -246,6 +246,26 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
     fn sector_size(&self) -> i32 {
         self.capabilities.sector_size
     }
+
+    fn lock(
+        &self,
+        handle: &mut Self::Handle,
+        level: sqlite_plugin::flags::LockLevel,
+    ) -> sqlite_plugin::vfs::VfsResult<()> {
+        log::debug!("lock: path={}", handle.file_path);
+        // TODO: get read timestamp if read replica
+        Ok(())
+    }
+
+    fn unlock(
+        &self,
+        handle: &mut Self::Handle,
+        level: sqlite_plugin::flags::LockLevel,
+    ) -> sqlite_plugin::vfs::VfsResult<()> {
+        log::debug!("unlock: path={}", handle.file_path);
+        // TODO: drop read timestamp if read replica
+        Ok(())
+    }
 }
 
 const VFS_NAME: &CStr = c"grpsqlite";
