@@ -106,8 +106,11 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
         path: Option<&str>,
         opts: sqlite_plugin::flags::OpenOpts,
     ) -> sqlite_plugin::vfs::VfsResult<Self::Handle> {
-        // TODO: tokio oncecell to get capabilities
-        todo!()
+        let mode = opts.mode();
+        Ok(handle::GrpcVfsHandle::new(
+            path.unwrap_or("").to_string(),
+            mode.is_readonly(),
+        ))
     }
 
     fn delete(&self, path: &str) -> sqlite_plugin::vfs::VfsResult<()> {
