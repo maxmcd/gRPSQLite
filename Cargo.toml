@@ -9,6 +9,9 @@ tonic = "0.13.1"
 prost = "0.13.5"
 uuid = { version = "1.17.0", features = ["v4"] }
 
+[[example]]
+name = "memory_server"
+
 [workspace]
 resolver = "3"
 members = ["sqlite_vfs"]
