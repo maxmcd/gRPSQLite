@@ -35,17 +35,17 @@ WORKDIR /code
 # Copy our project
 COPY . .
 
-# Build the static library with memvfs (debug build for faster compilation)
+# Build the static library with grpsqlite (debug build for faster compilation)
 RUN cargo build -p sqlite_vfs --features static
 
-# Create a custom SQLite binary with memvfs built in
+# Create a custom SQLite binary with grpsqlite built in
 RUN cd /tmp && \
     # Copy sqlite source files we need
     cp sqlite-src/sqlite3.c sqlite-src/sqlite3.h sqlite-src/shell.c . && \
     # Copy our simple C wrapper
     cp /code/sqlite_vfs/sqlite_with_grpsqlite.c . && \
     # Compile everything together
-    gcc -o sqlite3_with_memvfs \
+    gcc -o sqlite3_with_grpsqlite \
         -I/tmp \
         -DSQLITE_ENABLE_COLUMN_METADATA=1 \
         -DSQLITE_ENABLE_LOAD_EXTENSION=1 \
@@ -58,7 +58,7 @@ RUN cd /tmp && \
         -D_GNU_SOURCE \
         -O2 \
         sqlite3.c shell.c sqlite_with_grpsqlite.c \
-        /code/target/debug/grpsqlite_static/libsqlite_vfs.a \
+        /code/target/debug/libsqlite_vfs.a \
         -lpthread -ldl -lm && \
     # Install the custom sqlite binary
     cp sqlite3_with_grpsqlite /usr/local/bin/ && \
