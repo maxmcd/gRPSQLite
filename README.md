@@ -95,7 +95,7 @@ This supports a single read-write instance per database, and if your backing sto
 
 If your server supports atomic batch commits (basically any DB that can do a transaction), this results in _wildly_ faster SQLite transactions.
 
-By default, SQLite (in wal/wal2 mode) will write uncommitted transactions to the WAL file, and rely on a commit frame to determine whether the transaction actually committed.
+By default, SQLite (in wal/wal2 mode) will write uncommitted rows to the WAL file, and rely on a commit frame to determine whether the transaction actually committed.
 
 When the server supports atomic batch commits, the SQLite VFS will instead memory-buffer writes, then on commit send a single batch-write to the server. As you can guess now, this is _a lot faster_.
 
