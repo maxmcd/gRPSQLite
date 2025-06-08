@@ -9,7 +9,6 @@ mod handle;
 struct Capabilities {
     atomic_batch: bool,
     point_in_time_reads: bool,
-    wal2: bool,
     sector_size: i32,
 }
 
@@ -55,7 +54,6 @@ impl GrpcVfs {
             let capabilities = Capabilities {
                 atomic_batch: capabilities_response.atomic_batch,
                 point_in_time_reads: capabilities_response.point_in_time_reads,
-                wal2: capabilities_response.wal2,
                 sector_size: capabilities_response.sector_size,
             };
 
