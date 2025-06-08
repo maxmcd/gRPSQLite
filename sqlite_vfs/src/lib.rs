@@ -1,5 +1,8 @@
 use std::ffi::{CStr, c_char, c_int, c_void};
-use std::sync::Arc;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 
 use parking_lot::Mutex;
 
@@ -20,6 +23,9 @@ struct GrpcVfs {
     context: String,
     files: Arc<Mutex<Vec<handle::GrpcVfsHandle>>>,
     lease: Option<String>,
+
+    write_batch: Arc<Mutex<Vec<AtomicWrite>>>,
+    write_batch_open: AtomicBool,
 }
 
 impl GrpcVfs {
@@ -72,6 +78,8 @@ impl GrpcVfs {
             grpc_client: client,
             files: Arc::new(Mutex::new(vec![])),
             lease: None, // TODO: temp
+            write_batch: Arc::new(Mutex::new(vec![])),
+            write_batch_open: AtomicBool::new(false),
         }
     }
 }
@@ -113,6 +121,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
         path: Option<&str>,
         opts: sqlite_plugin::flags::OpenOpts,
     ) -> sqlite_plugin::vfs::VfsResult<Self::Handle> {
+        log::debug!("open: path={}, opts={:?}", path.unwrap_or(""), opts);
         let mode = opts.mode();
         let handle = handle::GrpcVfsHandle::new(path.unwrap_or("").to_string(), mode.is_readonly());
         self.files.lock().push(handle.clone());
@@ -130,7 +139,14 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                 file_name: path.to_string(),
             };
 
-            let _ = self.grpc_client.clone().delete(req).await;
+            match self.grpc_client.clone().delete(req).await {
+                Ok(response) => {
+                    log::debug!("delete successful: {:?}", response.into_inner());
+                }
+                Err(status) => {
+                    log::error!("delete failed: {:?}", status);
+                }
+            }
         });
 
         // Delete locally
@@ -149,7 +165,9 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
     }
 
     fn file_size(&self, handle: &mut Self::Handle) -> sqlite_plugin::vfs::VfsResult<usize> {
-        todo!()
+        log::debug!("file_size: path={}", handle.file_path);
+        // TODO: get file size over the server
+        Ok(0)
     }
 
     fn truncate(
@@ -159,7 +177,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
     ) -> sqlite_plugin::vfs::VfsResult<()> {
         log::debug!("truncate: path={}, size={}", handle.file_path, size);
         // Truncate over the server
-        self.runtime.block_on(async {
+        let result = self.runtime.block_on(async {
             let req = TruncateRequest {
                 context: self.context.clone(),
                 lease_id: self.lease.clone().unwrap_or("".to_string()),
@@ -167,10 +185,22 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                 size: size as i64,
             };
 
-            let _ = self.grpc_client.clone().truncate(req).await;
+            match self.grpc_client.clone().truncate(req).await {
+                Ok(response) => {
+                    log::debug!("truncate successful: {:?}", response.into_inner());
+                    Ok(())
+                }
+                Err(status) => {
+                    log::error!("truncate failed: {:?}", status);
+                    Err(sqlite_plugin::vars::SQLITE_IOERR_TRUNCATE)
+                }
+            }
         });
 
-        Ok(())
+        match result {
+            Ok(_) => Ok(()),
+            Err(err) => Err(err),
+        }
     }
 
     fn write(
@@ -179,7 +209,51 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
         offset: usize,
         data: &[u8],
     ) -> sqlite_plugin::vfs::VfsResult<usize> {
-        todo!()
+        log::debug!(
+            "write: path={}, offset={}, data={:?}",
+            handle.file_path,
+            offset,
+            data
+        );
+
+        if self.write_batch_open.load(Ordering::Acquire) {
+            log::debug!("adding to write batch");
+            self.write_batch.lock().push(AtomicWrite {
+                offset: offset as i64,
+                data: data.to_vec(),
+                context: self.context.clone(),
+                lease_id: self.lease.clone().unwrap_or("".to_string()),
+            });
+            return Ok(data.len());
+        }
+
+        // Write over the server
+        log::debug!("writing directly to server");
+        let result = self.runtime.block_on(async {
+            let req = WriteRequest {
+                context: self.context.clone(),
+                lease_id: self.lease.clone().unwrap_or("".to_string()),
+                data: data.to_vec(),
+                file_name: handle.file_path.clone(),
+                offset: offset as i64,
+            };
+
+            match self.grpc_client.clone().write(req).await {
+                Ok(response) => {
+                    log::debug!("write successful: {:?}", response.into_inner());
+                    Ok(())
+                }
+                Err(status) => {
+                    log::error!("write failed: {:?}", status);
+                    Err(sqlite_plugin::vars::SQLITE_IOERR_WRITE)
+                }
+            }
+        });
+
+        match result {
+            Ok(_) => Ok(data.len()),
+            Err(err) => Err(err),
+        }
     }
 
     fn read(
@@ -188,10 +262,49 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
         offset: usize,
         data: &mut [u8],
     ) -> sqlite_plugin::vfs::VfsResult<usize> {
-        todo!()
+        log::debug!(
+            "read: path={}, offset={}, len={}",
+            handle.file_path,
+            offset,
+            data.len()
+        );
+
+        // Read from the server
+        let result = self.runtime.block_on(async {
+            let req = ReadRequest {
+                context: self.context.clone(),
+                lease_id: self.lease.clone().unwrap_or("".to_string()),
+                file_name: handle.file_path.clone(),
+                offset: offset as i64,
+                length: data.len() as i64,
+                time_millis: 0, // TODO: implement proper timestamp for point-in-time reads
+            };
+
+            match self.grpc_client.clone().read(req).await {
+                Ok(response) => {
+                    let response_data = response.into_inner();
+                    log::debug!("read successful: {} bytes", response_data.data.len());
+                    Ok(response_data.data)
+                }
+                Err(status) => {
+                    log::error!("read failed: {:?}", status);
+                    Err(sqlite_plugin::vars::SQLITE_IOERR_READ)
+                }
+            }
+        });
+
+        match result {
+            Ok(response_data) => {
+                let len = data.len().min(response_data.len());
+                data[..len].copy_from_slice(&response_data[..len]);
+                Ok(len)
+            }
+            Err(err) => Err(err),
+        }
     }
 
     fn close(&self, handle: Self::Handle) -> sqlite_plugin::vfs::VfsResult<()> {
+        log::debug!("close: path={}", handle.file_path);
         let mut files = self.files.lock();
         files.retain(|f| f.file_path != handle.file_path);
         // TODO: release the lease
@@ -199,9 +312,11 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
     }
 
     fn device_characteristics(&self) -> i32 {
+        log::debug!("device_characteristics");
         let mut characteristics: i32 = sqlite_plugin::vfs::DEFAULT_DEVICE_CHARACTERISTICS;
 
         if self.capabilities.atomic_batch {
+            log::debug!("enabling SQLITE_IOCAP_BATCH_ATOMIC");
             characteristics |= sqlite_plugin::vars::SQLITE_IOCAP_BATCH_ATOMIC;
         }
 
@@ -225,18 +340,29 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
         op: c_int,
         _p_arg: *mut c_void,
     ) -> sqlite_plugin::vfs::VfsResult<()> {
-        // log::debug!("file_control: file={:?}, op={:?}", handle.name, op);
+        log::debug!("file_control: file={:?}, op={:?}", handle.file_path, op);
         match op {
+            sqlite_plugin::vars::SQLITE_FCNTL_BEGIN_ATOMIC_WRITE => {
+                log::debug!("begin_atomic_write control given");
+                // Open the write batch
+                self.write_batch_open.store(true, Ordering::Release);
+                Ok(())
+            }
             sqlite_plugin::vars::SQLITE_FCNTL_COMMIT_ATOMIC_WRITE => {
                 log::debug!("commit_atomic_write control given");
+                // Close the write batch
+                self.write_batch_open.store(false, Ordering::Release);
+
+                // TODO: send the batch over the server
+
                 Ok(())
             }
             sqlite_plugin::vars::SQLITE_FCNTL_ROLLBACK_ATOMIC_WRITE => {
                 log::debug!("rollback_atomic_write control given");
-                Ok(())
-            }
-            sqlite_plugin::vars::SQLITE_FCNTL_BEGIN_ATOMIC_WRITE => {
-                log::debug!("begin_atomic_write control given");
+                // Close the write batch
+                self.write_batch_open.store(false, Ordering::Release);
+                // Clear the batch
+                self.write_batch.lock().clear();
                 Ok(())
             }
             _ => Err(sqlite_plugin::vars::SQLITE_NOTFOUND),
@@ -244,6 +370,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
     }
 
     fn sector_size(&self) -> i32 {
+        log::debug!("sector_size");
         self.capabilities.sector_size
     }
 

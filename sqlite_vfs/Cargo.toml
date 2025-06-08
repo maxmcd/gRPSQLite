@@ -3,6 +3,13 @@ name = "sqlite_vfs"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+crate-type = ["staticlib", "cdylib"]
+
+[features]
+static = ["sqlite-plugin/static"]
+dynamic = ["sqlite-plugin/dynamic"]
+
 [dependencies]
 sqlite-plugin = { path = "src/sqlite-plugin", features = ["dynamic", "static"] }
 tonic = "0.13.1"
