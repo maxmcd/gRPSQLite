@@ -159,8 +159,13 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
     }
 
     fn device_characteristics(&self) -> i32 {
-        // TODO: tokio oncecell to get capabilities
-        todo!()
+        let mut characteristics: i32 = sqlite_plugin::vfs::DEFAULT_DEVICE_CHARACTERISTICS;
+
+        if self.capabilities.atomic_batch {
+            characteristics |= sqlite_plugin::vars::SQLITE_IOCAP_BATCH_ATOMIC;
+        }
+
+        characteristics
     }
 
     fn pragma(

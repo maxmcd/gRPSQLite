@@ -83,13 +83,8 @@ message GetCapabilitiesResponse {
   // If the server supports point-in-time reads, it supports read replicas.
   bool point_in_time_reads = 3;
 
-  // wal2 is only used if atomic_batch is not supported, and will enable
-  // journal_mode=wal2. If atomic_batch is not supported, and wal2 is not
-  // supported, then it will use journal_mode=wal.
-  bool wal2 = 4;
-
   // The sector size of the file system, generally 4096.
-  int32 sector_size = 5;
+  int32 sector_size = 4;
 }
 
 message AcquireLeaseRequest {
