@@ -26,6 +26,8 @@ struct GrpcVfs {
 
     write_batch: Arc<Mutex<Vec<AtomicWrite>>>,
     write_batch_open: AtomicBool,
+
+    current_read_timestamp: Arc<Mutex<Option<i64>>>,
 }
 
 impl GrpcVfs {
@@ -82,6 +84,7 @@ impl GrpcVfs {
             lease: Arc::new(Mutex::new(None)),
             write_batch: Arc::new(Mutex::new(vec![])),
             write_batch_open: AtomicBool::new(false),
+            current_read_timestamp: Arc::new(Mutex::new(None)),
         }
     }
 }
@@ -352,9 +355,27 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
 
     fn close(&self, handle: Self::Handle) -> sqlite_plugin::vfs::VfsResult<()> {
         log::debug!("close: path={}", handle.file_path);
+
+        // Close rpc
+        self.runtime.block_on(async {
+            let req = CloseRequest {
+                context: self.context.clone(),
+                lease_id: self.lease.lock().clone().unwrap_or("".to_string()),
+                file_name: handle.file_path.clone(),
+            };
+
+            match self.grpc_client.clone().close(req).await {
+                Ok(response) => {
+                    log::debug!("close successful: {:?}", response.into_inner());
+                }
+                Err(status) => {
+                    log::error!("close failed: {:?}", status);
+                }
+            }
+        });
+
         let mut files = self.files.lock();
         files.retain(|f| f.file_path != handle.file_path);
-        // TODO: release the lease
         Ok(())
     }
 
