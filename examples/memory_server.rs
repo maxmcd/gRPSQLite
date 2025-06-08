@@ -91,20 +91,18 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
 
         // Check if offset is beyond file size
         if offset >= file.len() {
+            println!("read offset is beyond file size");
             return Ok(Response::new(grpsqlite::ReadResponse {
                 data: vec![],
                 time_millis: 0, // no time
             }));
         }
 
-        if offset + length > file.len() {
-            return Ok(Response::new(grpsqlite::ReadResponse {
-                data: vec![],
-                time_millis: 0, // no time
-            }));
-        }
+        // Read as much data as available, up to the requested length
+        let end_offset = std::cmp::min(offset + length, file.len());
+        let data = file[offset..end_offset].to_vec();
 
-        let data = file[offset..offset + length].to_vec();
+        println!("read data: {:?}", data);
 
         Ok(Response::new(grpsqlite::ReadResponse {
             data,
@@ -131,6 +129,7 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
         if offset + inner.data.len() > file.len() {
             file.resize(offset + inner.data.len(), 0);
         }
+        println!("write data: {:?}", inner.data);
         file[offset..offset + inner.data.len()].copy_from_slice(&inner.data);
         Ok(Response::new(()))
     }

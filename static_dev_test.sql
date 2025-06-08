@@ -1,6 +1,3 @@
--- Test script for static memvfs that's built into SQLite binary
--- The memvfs should already be registered as the default VFS
-
 -- uncomment to enable verbose logs
 .log stderr
 
@@ -24,3 +21,12 @@ drop table t1;
 vacuum;
 
 select * from dbstat;
+
+-- simpler example:
+
+.log stderr
+.open main.db
+PRAGMA journal_mode=memory;
+CREATE TABLE t1(a, b);
+INSERT INTO t1 VALUES(1, 2);
+SELECT * FROM t1;
