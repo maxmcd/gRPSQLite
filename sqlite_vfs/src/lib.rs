@@ -173,7 +173,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
         handle: &mut Self::Handle,
         pragma: sqlite_plugin::vfs::Pragma<'_>,
     ) -> Result<Option<String>, sqlite_plugin::vfs::PragmaErr> {
-        // log::debug!("pragma: file={:?}, pragma={:?}", handle.name, pragma);
+        log::debug!("pragma: file={:?}, pragma={:?}", handle.file_path, pragma);
         Err(sqlite_plugin::vfs::PragmaErr::NotFound)
     }
 
