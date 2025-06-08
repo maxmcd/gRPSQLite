@@ -19,6 +19,7 @@ struct GrpcVfs {
     grpc_client: grpsqlite_client::GrpsqliteClient<tonic::transport::Channel>,
     context: String,
     files: Arc<Mutex<Vec<handle::GrpcVfsHandle>>>,
+    lease: Option<String>,
 }
 
 impl GrpcVfs {
@@ -59,6 +60,8 @@ impl GrpcVfs {
                 sector_size: capabilities_response.sector_size,
             };
 
+            // TODO: get the lease, launch heartbeat task (or thread?)
+
             (client, capabilities, capabilities_response.context)
         });
 
@@ -68,6 +71,7 @@ impl GrpcVfs {
             capabilities,
             grpc_client: client,
             files: Arc::new(Mutex::new(vec![])),
+            lease: None, // TODO: temp
         }
     }
 }
@@ -116,7 +120,23 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
     }
 
     fn delete(&self, path: &str) -> sqlite_plugin::vfs::VfsResult<()> {
-        todo!()
+        log::debug!("delete: path={}", path);
+
+        // Delete over the server
+        self.runtime.block_on(async {
+            let req = DeleteRequest {
+                context: self.context.clone(),
+                lease_id: self.lease.clone().unwrap_or("".to_string()),
+                file_name: path.to_string(),
+            };
+
+            let _ = self.grpc_client.clone().delete(req).await;
+        });
+
+        // Delete locally
+        let mut files = self.files.lock();
+        files.retain(|f| f.file_path != path);
+        Ok(())
     }
 
     fn access(
@@ -137,7 +157,20 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
         handle: &mut Self::Handle,
         size: usize,
     ) -> sqlite_plugin::vfs::VfsResult<()> {
-        todo!()
+        log::debug!("truncate: path={}, size={}", handle.file_path, size);
+        // Truncate over the server
+        self.runtime.block_on(async {
+            let req = TruncateRequest {
+                context: self.context.clone(),
+                lease_id: self.lease.clone().unwrap_or("".to_string()),
+                file_name: handle.file_path.clone(),
+                size: size as i64,
+            };
+
+            let _ = self.grpc_client.clone().truncate(req).await;
+        });
+
+        Ok(())
     }
 
     fn write(
