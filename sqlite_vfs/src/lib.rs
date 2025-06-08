@@ -129,6 +129,11 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
         log::debug!("open: path={}, opts={:?}", path.unwrap_or(""), opts);
         let mode = opts.mode();
 
+        if mode.is_readonly() && !self.capabilities.point_in_time_reads {
+            log::error!("read-only mode is not supported for this server");
+            return Err(sqlite_plugin::vars::SQLITE_CANTOPEN);
+        }
+
         // acquire a lease if we are RW
         if !mode.is_readonly() {
             let lease_result = self.runtime.block_on(async {
@@ -319,6 +324,9 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
             data.len()
         );
 
+        // Get the current read timestamp or use 0 if we don't have one
+        let current_timestamp = self.current_read_timestamp.lock().unwrap_or(0);
+
         // Read from the server
         let result = self.runtime.block_on(async {
             let req = ReadRequest {
@@ -327,14 +335,14 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                 file_name: handle.file_path.clone(),
                 offset: offset as i64,
                 length: data.len() as i64,
-                time_millis: 0, // TODO: implement proper timestamp for point-in-time reads
+                time_millis: current_timestamp,
             };
 
             match self.grpc_client.clone().read(req).await {
                 Ok(response) => {
                     let response_data = response.into_inner();
                     log::debug!("read successful: {} bytes", response_data.data.len());
-                    Ok(response_data.data)
+                    Ok(response_data)
                 }
                 Err(status) => {
                     log::error!("read failed: {:?}", status);
@@ -345,8 +353,14 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
 
         match result {
             Ok(response_data) => {
-                let len = data.len().min(response_data.len());
-                data[..len].copy_from_slice(&response_data[..len]);
+                let len = data.len().min(response_data.data.len());
+                data[..len].copy_from_slice(&response_data.data[..len]);
+
+                // Set the read timestamp if we don't have one and the response has a non-zero timestamp
+                if current_timestamp == 0 && response_data.time_millis != 0 {
+                    *self.current_read_timestamp.lock() = Some(response_data.time_millis);
+                }
+
                 Ok(len)
             }
             Err(err) => Err(err),
@@ -476,23 +490,16 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
         self.capabilities.sector_size
     }
 
-    fn lock(
-        &self,
-        handle: &mut Self::Handle,
-        level: sqlite_plugin::flags::LockLevel,
-    ) -> sqlite_plugin::vfs::VfsResult<()> {
-        log::debug!("lock: path={}", handle.file_path);
-        // TODO: get read timestamp if read replica
-        Ok(())
-    }
-
     fn unlock(
         &self,
         handle: &mut Self::Handle,
-        level: sqlite_plugin::flags::LockLevel,
+        _level: sqlite_plugin::flags::LockLevel,
     ) -> sqlite_plugin::vfs::VfsResult<()> {
         log::debug!("unlock: path={}", handle.file_path);
-        // TODO: drop read timestamp if read replica
+
+        // Drop the read timestamp
+        *self.current_read_timestamp.lock() = None;
+
         Ok(())
     }
 }
