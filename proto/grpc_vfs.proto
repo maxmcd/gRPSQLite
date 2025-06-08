@@ -16,7 +16,8 @@ service Grpsqlite {
   rpc AcquireLease(AcquireLeaseRequest) returns (AcquireLeaseResponse);
 
   // Close should release the lease, or no-op if the lease is not held by this
-  // client
+  // client. Consider that the wal and wal2 files are closed, so you will not
+  // want to drop the lease when closing them, only the main database file.
   rpc Close(CloseRequest) returns (google.protobuf.Empty);
 
   // HeartbeatLease should refresh the lease, if it is still held by this client
