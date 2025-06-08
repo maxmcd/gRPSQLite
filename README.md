@@ -1,4 +1,4 @@
-# gRPSQLite
+# gRPSQLite <!-- omit in toc -->
 
 gRPC + SQLite enabling you to easily build multitenant, metered, bottomless, infinite SQLite databases backed by anything you can dream of.  Implement by making a gRPC server and using a pre-made VFS.
 
@@ -8,15 +8,13 @@ Uses real SQLite, so it works with everything that SQLite does (packages, extens
 
 _Yes, the name is a pun._
 
-## Table of Contents
+## Table of Contents <!-- omit in toc -->
 
-- [gRPSQLite](#grpsqlite)
-  - [Table of Contents](#table-of-contents)
-  - [How it works](#how-it-works)
-  - [Atomic batch commits](#atomic-batch-commits)
-  - [Read-only Replicas](#read-only-replicas)
-  - [Developing](#developing)
-    - [Test with memory VFS example](#test-with-memory-vfs-example)
+- [How it works](#how-it-works)
+- [Atomic batch commits](#atomic-batch-commits)
+- [Read-only Replicas](#read-only-replicas)
+- [Developing](#developing)
+  - [Test with memory VFS example](#test-with-memory-vfs-example)
 
 
 ## How it works
