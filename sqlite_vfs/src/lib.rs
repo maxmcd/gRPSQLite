@@ -31,6 +31,8 @@ struct GrpcVfs {
 impl GrpcVfs {
     pub fn new() -> Self {
         let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .enable_io()
             .build()
             .unwrap(); // SQLite is single-threaded, so we can use a single-threaded runtime
 
