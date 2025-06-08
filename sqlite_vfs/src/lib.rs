@@ -215,12 +215,12 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
     }
 }
 
-const VFS_NAME: &CStr = c"grpcvfs";
+const VFS_NAME: &CStr = c"grpsqlite";
 
 /// This function initializes the VFS statically.
 /// Called automatically when the library is loaded.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn initialize_grpcvfs() -> i32 {
+pub unsafe extern "C" fn initialize_grpsqlite() -> i32 {
     let vfs = GrpcVfs::new();
 
     if let Err(err) = sqlite_plugin::vfs::register_static(
@@ -228,7 +228,7 @@ pub unsafe extern "C" fn initialize_grpcvfs() -> i32 {
         vfs,
         sqlite_plugin::vfs::RegisterOpts { make_default: true },
     ) {
-        eprintln!("Failed to initialize grpcvfs: {}", err);
+        eprintln!("Failed to initialize grpsqlite: {}", err);
         return err;
     }
 
@@ -242,7 +242,7 @@ pub unsafe extern "C" fn initialize_grpcvfs() -> i32 {
 /// # Safety
 /// This function should only be called by sqlite's extension loading mechanism.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn sqlite3_grpcvfs_init(
+pub unsafe extern "C" fn sqlite3_grpsqlite_init(
     _db: *mut c_void,
     _pz_err_msg: *mut *mut c_char,
     p_api: *mut sqlite_plugin::sqlite3_api_routines,
