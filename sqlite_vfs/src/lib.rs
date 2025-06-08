@@ -196,8 +196,25 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
 
     fn file_size(&self, handle: &mut Self::Handle) -> sqlite_plugin::vfs::VfsResult<usize> {
         log::debug!("file_size: path={}", handle.file_path);
-        // TODO: get file size over the server
-        Ok(0)
+        self.runtime.block_on(async {
+            let req = GetFileSizeRequest {
+                context: self.context.clone(),
+                lease_id: self.lease.lock().clone().unwrap_or("".to_string()),
+                file_name: handle.file_path.clone(),
+            };
+
+            match self.grpc_client.clone().get_file_size(req).await {
+                Ok(response) => {
+                    let size = response.into_inner().size;
+                    log::debug!("file_size is: {}", size);
+                    Ok(size as usize)
+                }
+                Err(status) => {
+                    log::error!("get_file_size failed: {:?}", status);
+                    Err(sqlite_plugin::vars::SQLITE_IOERR_FSTAT)
+                }
+            }
+        })
     }
 
     fn truncate(

@@ -129,7 +129,7 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
         if offset + inner.data.len() > file.len() {
             file.resize(offset + inner.data.len(), 0);
         }
-        println!("write data: {:?}", inner.data);
+        println!("write data at offset {}: {:?}", offset, inner.data);
         file[offset..offset + inner.data.len()].copy_from_slice(&inner.data);
         Ok(Response::new(()))
     }
@@ -140,8 +140,10 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
     ) -> Result<Response<()>, Status> {
         let inner = request.into_inner();
         println!(
-            "atomic_write_batch context={} file={}",
-            inner.context, inner.file_name
+            "atomic_write_batch context={} file={} writes={}",
+            inner.context,
+            inner.file_name,
+            inner.writes.len()
         );
         let mut files = self.files.lock().unwrap();
         let file = files.entry(inner.file_name).or_insert_with(Vec::new);

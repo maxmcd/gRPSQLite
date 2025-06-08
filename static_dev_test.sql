@@ -28,5 +28,6 @@ select * from dbstat;
 .open main.db
 PRAGMA journal_mode=memory;
 CREATE TABLE t1(a, b);
+SELECT * FROM t1;
 INSERT INTO t1 VALUES(1, 2);
 SELECT * FROM t1;
