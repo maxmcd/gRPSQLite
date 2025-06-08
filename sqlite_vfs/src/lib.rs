@@ -383,9 +383,43 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                 // Close the write batch
                 self.write_batch_open.store(false, Ordering::Release);
 
-                // TODO: send the batch over the server
+                // Send the batch over the server
+                let result = self.runtime.block_on(async {
+                    let batch = self.write_batch.lock().clone();
+                    if batch.is_empty() {
+                        log::debug!("write batch is empty, nothing to commit");
+                        return Ok(());
+                    }
 
-                Ok(())
+                    let req = AtomicWriteBatchRequest {
+                        context: self.context.clone(),
+                        lease_id: self.lease.lock().clone().unwrap_or("".to_string()),
+                        file_name: handle.file_path.clone(),
+                        writes: batch,
+                    };
+
+                    match self.grpc_client.clone().atomic_write_batch(req).await {
+                        Ok(response) => {
+                            log::debug!(
+                                "atomic write batch successful: {:?}",
+                                response.into_inner()
+                            );
+                            Ok(())
+                        }
+                        Err(status) => {
+                            log::error!("atomic write batch failed: {:?}", status);
+                            Err(sqlite_plugin::vars::SQLITE_IOERR_WRITE)
+                        }
+                    }
+                });
+
+                // Clear the batch after sending
+                self.write_batch.lock().clear();
+
+                match result {
+                    Ok(_) => Ok(()),
+                    Err(err) => Err(err),
+                }
             }
             sqlite_plugin::vars::SQLITE_FCNTL_ROLLBACK_ATOMIC_WRITE => {
                 log::debug!("rollback_atomic_write control given");
