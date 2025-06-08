@@ -8,6 +8,10 @@ Uses real SQLite, so it works with everything that SQLite does (packages, extens
 
 _Yes, the name is a pun._
 
+> [!WARNING]
+> This is very early stage software.
+> Only primitive testing is done, and should not be used for production workloads.
+
 ## Table of Contents <!-- omit in toc -->
 
 - [Examples](#examples)
