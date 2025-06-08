@@ -2,13 +2,33 @@
 
 gRPC + SQLite
 
-Multitenant, metered, bottomless, infinite SQLite databases backed by anything you can dream of. Implement by making a gRPC server and using a pre-made VFS.
+Build multitenant, metered, bottomless, infinite SQLite databases backed by anything you can dream of. Implement by making a gRPC server and using a pre-made VFS.
 
-Give every user, whether human or AI, as many SQLite databases as they want.
+Give every user, human or AI, as many SQLite databases as they want.
 
 Uses real SQLite, so it works with everything that SQLite does (packages, extensions, apps, etc.)
 
 _Yes, the name is a pun._
+
+## How it works
+
+The provided VFS converts SQLite VFS calls to gRPC calls so that you can effectively implement a SQLite VFS via gRPC.
+
+The provided VFS manages a lot of other features for you like atomic batch commits, stable read timestamp tracking, and more.
+
+Your gRPC server can then enable the various features based on the backing datastore you use.
+
+For example, if you use a database like FoundationDB that supports both atomic transactions, as well as point-in-time reads, you get the benefits of wildly more efficient SQLite atomic commits (writes the whole transaction at once, rather than unwinding writes to a journal), and support for read-only SQLite instances.
+
+This supports a single read-write instance per database, and if your backing store supports it, unlimited read-only replicas.
+
+## Read-only Replicas
+
+If your database supports point-in-time reads (across transactions), then you can support read-only SQLite replicas. Without stable timestamps for reads, a read replica might see an inconsistent database state that will cause SQLite to think the database has been corrupted.
+
+The way this works is when you first submit a read for a transaction, the response will return a stable timestamp that the SQLite VFS will remember for the duration of the transaction (until atomic rollback or xUnlock is called). Subsequent reads from the same transaction will provide this timestamp, which your DB should use to ensure that the transaction sees a stable timestamp of the database.
+
+To start a read-only replica instance, simply open the DB is read-only mode. The VFS will verify with the capabilities of the gRPC server implementation that it can support read-only replicas (if not, it will error on open with `SQLITE_CANTOPEN`), and will not attempt to acquire a lease on open.
 
 ## Developing
 
@@ -52,7 +72,7 @@ SELECT * FROM t1;
 
 ```
 
-_Yes copy the newline to force execution of the last line_
+_You want to copy the newline to force execution of the last line_
 
 Then you can ctrl-c the third terminal, execute it again, and see that the data is still there:
 
