@@ -102,7 +102,7 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
         let end_offset = std::cmp::min(offset + length, file.len());
         let data = file[offset..end_offset].to_vec();
 
-        println!("read data: {:?}", data);
+        println!("read data length: {}", data.len());
 
         Ok(Response::new(grpsqlite::ReadResponse {
             data,
