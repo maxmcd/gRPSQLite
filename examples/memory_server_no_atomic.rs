@@ -129,7 +129,7 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
         if offset + inner.data.len() > file.len() {
             file.resize(offset + inner.data.len(), 0);
         }
-        println!("write data at offset {}: {:?}", offset, inner.data);
+        println!("write data at offset {}", offset);
         file[offset..offset + inner.data.len()].copy_from_slice(&inner.data);
         Ok(Response::new(()))
     }
