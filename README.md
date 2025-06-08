@@ -97,11 +97,11 @@ If your server supports atomic batch commits (basically any DB that can do a tra
 
 By default, SQLite (in wal/wal2 mode) will write uncommitted rows to the WAL file, and rely on a commit frame to determine whether the transaction actually committed.
 
-When the server supports atomic batch commits, the SQLite VFS will instead memory-buffer writes, then on commit send a single batch-write to the server. As you can guess now, this is _a lot faster_.
+When the server supports atomic batch commits, the SQLite VFS will instead memory-buffer writes, and on commit send a single batched write to the server (`AtomicWriteBatch`). As you can guess now, this is _a lot faster_.
 
-If your server supports this, you should always use the `memory` VFS for clients. If you don't, then you should set `pragma locking_mode=exclusive` and `pragma journal_mode=wal` (or `wal2`).
+If your server supports this, clients should always use `PRAGME journal_mode=memory` (which should be the default). If you don't, then they should set `pragma locking_mode=exclusive` and `pragma journal_mode=wal` (or `wal2`).
 
-The `memory` journal mode is ideal for 3 reasons:
+`journal_mode=memory` is ideal:
 
 1. We don't need a WAL anymore, because we atomically commit the whole transaction (your backing store likely has its own WAL)
 2. Because there are no WAL writes, there is no WAL checkpointing, meaning we never have to double-write committed transactions
