@@ -54,7 +54,7 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
         request: Request<grpsqlite::CloseRequest>,
     ) -> Result<Response<()>, Status> {
         let inner = request.into_inner();
-        println!("close context={}", inner.context);
+        println!("close context={} file={}", inner.context, inner.file_name);
         // no-op
         Ok(Response::new(()))
     }
