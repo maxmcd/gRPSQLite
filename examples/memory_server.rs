@@ -34,9 +34,14 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
 
     async fn acquire_lease(
         &self,
-        _request: Request<grpsqlite::AcquireLeaseRequest>,
+        request: Request<grpsqlite::AcquireLeaseRequest>,
     ) -> Result<Response<grpsqlite::AcquireLeaseResponse>, Status> {
-        // no-op
+        let inner = request.into_inner();
+        let mut files = self.files.lock().unwrap();
+
+        // Ensure the file exists in our in-memory storage
+        files.entry(inner.database).or_insert_with(Vec::new);
+
         Ok(Response::new(grpsqlite::AcquireLeaseResponse {
             lease_id: Uuid::new_v4().to_string(), // not checked, example only
         }))

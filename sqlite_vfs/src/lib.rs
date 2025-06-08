@@ -22,7 +22,7 @@ struct GrpcVfs {
     grpc_client: grpsqlite_client::GrpsqliteClient<tonic::transport::Channel>,
     context: String,
     files: Arc<Mutex<Vec<handle::GrpcVfsHandle>>>,
-    lease: Option<String>,
+    lease: Arc<Mutex<Option<String>>>,
 
     write_batch: Arc<Mutex<Vec<AtomicWrite>>>,
     write_batch_open: AtomicBool,
@@ -79,7 +79,7 @@ impl GrpcVfs {
             capabilities,
             grpc_client: client,
             files: Arc::new(Mutex::new(vec![])),
-            lease: None, // TODO: temp
+            lease: Arc::new(Mutex::new(None)),
             write_batch: Arc::new(Mutex::new(vec![])),
             write_batch_open: AtomicBool::new(false),
         }
@@ -125,6 +125,34 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
     ) -> sqlite_plugin::vfs::VfsResult<Self::Handle> {
         log::debug!("open: path={}, opts={:?}", path.unwrap_or(""), opts);
         let mode = opts.mode();
+
+        // acquire a lease if we are RW
+        if !mode.is_readonly() {
+            let lease_result = self.runtime.block_on(async {
+                let req = AcquireLeaseRequest {
+                    context: self.context.clone(),
+                    database: path.unwrap_or("").to_string(),
+                };
+
+                match self.grpc_client.clone().acquire_lease(req).await {
+                    Ok(response) => {
+                        let lease_response = response.into_inner();
+                        log::debug!("lease acquired: {:?}", lease_response.lease_id);
+                        *self.lease.lock() = Some(lease_response.lease_id);
+                        Ok(())
+                    }
+                    Err(status) => {
+                        log::error!("failed to acquire lease: {:?}", status);
+                        Err(sqlite_plugin::vars::SQLITE_CANTOPEN)
+                    }
+                }
+            });
+
+            if let Err(err) = lease_result {
+                return Err(err);
+            }
+        }
+
         let handle = handle::GrpcVfsHandle::new(path.unwrap_or("").to_string(), mode.is_readonly());
         self.files.lock().push(handle.clone());
         Ok(handle)
@@ -137,7 +165,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
         self.runtime.block_on(async {
             let req = DeleteRequest {
                 context: self.context.clone(),
-                lease_id: self.lease.clone().unwrap_or("".to_string()),
+                lease_id: self.lease.lock().clone().unwrap_or("".to_string()),
                 file_name: path.to_string(),
             };
 
@@ -182,7 +210,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
         let result = self.runtime.block_on(async {
             let req = TruncateRequest {
                 context: self.context.clone(),
-                lease_id: self.lease.clone().unwrap_or("".to_string()),
+                lease_id: self.lease.lock().clone().unwrap_or("".to_string()),
                 file_name: handle.file_path.clone(),
                 size: size as i64,
             };
@@ -224,7 +252,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                 offset: offset as i64,
                 data: data.to_vec(),
                 context: self.context.clone(),
-                lease_id: self.lease.clone().unwrap_or("".to_string()),
+                lease_id: self.lease.lock().clone().unwrap_or("".to_string()),
             });
             return Ok(data.len());
         }
@@ -234,7 +262,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
         let result = self.runtime.block_on(async {
             let req = WriteRequest {
                 context: self.context.clone(),
-                lease_id: self.lease.clone().unwrap_or("".to_string()),
+                lease_id: self.lease.lock().clone().unwrap_or("".to_string()),
                 data: data.to_vec(),
                 file_name: handle.file_path.clone(),
                 offset: offset as i64,
@@ -275,7 +303,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
         let result = self.runtime.block_on(async {
             let req = ReadRequest {
                 context: self.context.clone(),
-                lease_id: self.lease.clone().unwrap_or("".to_string()),
+                lease_id: self.lease.lock().clone().unwrap_or("".to_string()),
                 file_name: handle.file_path.clone(),
                 offset: offset as i64,
                 length: data.len() as i64,
