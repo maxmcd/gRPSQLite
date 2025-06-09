@@ -26,6 +26,7 @@ _Yes, the name is a pun._
 - [How it works](#how-it-works)
   - [Atomic batch commits](#atomic-batch-commits)
   - [Read-only Replicas](#read-only-replicas)
+  - [Checksums](#checksums)
 - [Performance](#performance)
 - [Contributing](#contributing)
 
@@ -173,6 +174,14 @@ The way this works is when you first submit a read for a transaction, the respon
 - S3
 - Most filesystems
 - SQLite
+
+### Checksums
+
+By default, SQLite doesn't do page checksums 😵‍💫
+
+Luckily, your backing DB probably does.
+
+Local page caching tracks checksums in memory, and if enabled, will submit them with each write. That way your server doesn't have to worry about implementing the checksums.
 
 ## Performance
 
