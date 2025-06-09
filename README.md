@@ -26,6 +26,7 @@ _Yes, the name is a pun._
 - [How it works](#how-it-works)
   - [Atomic batch commits](#atomic-batch-commits)
   - [Read-only Replicas](#read-only-replicas)
+- [Performance](#performance)
 - [Contributing](#contributing)
 
 
@@ -172,6 +173,18 @@ The way this works is when you first submit a read for a transaction, the respon
 - S3
 - Most filesystems
 - SQLite
+
+## Performance
+
+Performance can be either worse, or better, than a traditional SQLite-on-EBS setup:
+
+1. Read-write transactions can happen a lot faster because it can do atomic batched writes
+2. Reads can be slower if the gRPC + DB latency is higher than an EBS block read
+3. Read-only replica performance can be infinitely replicated if the backend supports it!
+
+A good rule of thumb is:
+1. Small transactions will be slower
+2. Larger read-write transactions can be faster
 
 ## Contributing
 
