@@ -17,7 +17,10 @@ _Yes, the name is a pun._
 
 ## Table of Contents <!-- omit in toc -->
 
-- [Examples](#examples)
+- [Server Examples](#server-examples)
+- [Client Examples (WIP)](#client-examples-wip)
+  - [Dynamic Loading](#dynamic-loading)
+  - [Statically compiling](#statically-compiling)
   - [Memory VFS with atomic commit example](#memory-vfs-with-atomic-commit-example)
 - [Writing a gRPC server (WIP)](#writing-a-grpc-server-wip)
   - [Handling page sizes and row keys](#handling-page-sizes-and-row-keys)
@@ -31,9 +34,39 @@ _Yes, the name is a pun._
 - [Contributing](#contributing)
 
 
-## Examples
+## Server Examples
 
 See the [`examples/`](examples/) directory for example server implementations.
+
+## Client Examples (WIP)
+
+There are 2 ways of using the SQLite VFS:
+
+1. Dynamically load the VFS
+2. Statically compile the VFS into a SQLite binary
+
+Statically compiling in is the smoothest experience, as it becomes the default VFS when you open a database file without having to load anything.
+
+### Dynamic Loading
+
+```
+cargo build --release -p sqlite_vfs --features dynamic
+```
+
+This will produce a `target/release/libsqlite_vfs.so` that you can use in SQLite:
+
+```
+.load path/to/libsqlite_vfs.so
+```
+
+### Statically compiling
+
+The process:
+1. Building a static lib
+2. Using a little C stub for initializing (sets the default VFS)
+3. Compile SQLite with the C stub and static library
+
+For statically compiling into a SQLite distribution, see the [`static_dev.Dockerfile`](static_dev.Dockerfile) example which does all of this automatically (you'll probably want to build with `--release` though).
 
 ### Memory VFS with atomic commit example
 
