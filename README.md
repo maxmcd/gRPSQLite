@@ -242,4 +242,4 @@ A good rule of thumb is:
 
 Do not submit pull requests out of nowhere, they will be closed.
 
-If you find a bug or want to request a feature, create a discussion. Contributors will turn it into an issue if its deemed relevant.
+If you find a bug or want to request a feature, create a discussion. Contributors will turn it into an issue if required.
