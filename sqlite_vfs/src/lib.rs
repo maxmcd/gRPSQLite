@@ -28,6 +28,7 @@ struct GrpcVfs {
     write_batch_open: AtomicBool,
     current_read_timestamp: Arc<Mutex<Option<i64>>>,
     heartbeat_shutdown_tx: Arc<Mutex<Option<tokio::sync::oneshot::Sender<()>>>>,
+    first_page_cache: Arc<Mutex<Vec<u8>>>,
 }
 
 impl GrpcVfs {
@@ -93,6 +94,7 @@ impl GrpcVfs {
             write_batch_open: AtomicBool::new(false),
             current_read_timestamp: Arc::new(Mutex::new(None)),
             heartbeat_shutdown_tx: Arc::new(Mutex::new(None)),
+            first_page_cache: Arc::new(Mutex::new(vec![])),
         }
     }
 
@@ -372,7 +374,15 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
         });
 
         match result {
-            Ok(_) => Ok(()),
+            Ok(_) => {
+                // Clear first page cache if we're RW and truncating affects the first page
+                let is_rw = self.lease.lock().is_some();
+                if is_rw && handle.is_main_db && size < self.capabilities.sector_size as usize {
+                    log::debug!("clearing first page cache due to truncate");
+                    self.first_page_cache.lock().clear();
+                }
+                Ok(())
+            }
             Err(err) => Err(err),
         }
     }
@@ -390,14 +400,25 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
             data
         );
 
+        let lease_id = self.lease.lock().clone();
+        let is_rw = lease_id.is_some();
+        let is_first_page = offset + data.len() <= self.capabilities.sector_size as usize;
+
         if self.write_batch_open.load(Ordering::Acquire) {
             log::debug!("adding to write batch");
             self.write_batch.lock().push(AtomicWrite {
                 offset: offset as i64,
                 data: data.to_vec(),
                 context: self.context.clone(),
-                lease_id: self.lease.lock().clone().unwrap_or("".to_string()),
+                lease_id: lease_id.unwrap_or("".to_string()),
             });
+
+            // Update first page cache as part of the batch
+            if is_rw && is_first_page && handle.is_main_db {
+                log::debug!("updating first page cache for batched write (full sector)");
+                *self.first_page_cache.lock() = data.to_vec();
+            }
+
             return Ok(data.len());
         }
 
@@ -406,7 +427,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
         let result = self.runtime.block_on(async {
             let req = WriteRequest {
                 context: self.context.clone(),
-                lease_id: self.lease.lock().clone().unwrap_or("".to_string()),
+                lease_id: lease_id.unwrap_or("".to_string()),
                 data: data.to_vec(),
                 file_name: handle.file_path.clone(),
                 offset: offset as i64,
@@ -425,7 +446,15 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
         });
 
         match result {
-            Ok(_) => Ok(data.len()),
+            Ok(_) => {
+                // On successful direct write, update the cache
+                if is_rw && is_first_page && handle.is_main_db {
+                    log::debug!("updating first page cache for direct write (full sector)");
+                    *self.first_page_cache.lock() = data.to_vec();
+                }
+
+                Ok(data.len())
+            }
             Err(err) => Err(err),
         }
     }
@@ -443,6 +472,76 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
             data.len()
         );
 
+        let lease_id = self.lease.lock().clone();
+        let is_rw = lease_id.is_some();
+        let is_first_page = offset + data.len() <= self.capabilities.sector_size as usize;
+
+        if is_rw && is_first_page && handle.is_main_db {
+            log::debug!("reading from first page cache");
+            let mut cache = self.first_page_cache.lock();
+
+            // If cache is empty, populate it from server.
+            if cache.is_empty() {
+                log::debug!("first page cache miss, reading from server");
+
+                let mut read_timestamp_guard = self.current_read_timestamp.lock();
+                let current_timestamp = read_timestamp_guard.unwrap_or(0);
+
+                let result = self.runtime.block_on(async {
+                    let req = ReadRequest {
+                        context: self.context.clone(),
+                        lease_id: lease_id.unwrap_or("".to_string()),
+                        file_name: handle.file_path.clone(),
+                        offset: 0, // Always read from start for first page
+                        length: self.capabilities.sector_size as i64,
+                        time_millis: current_timestamp,
+                    };
+
+                    match self.grpc_client.clone().read(req).await {
+                        Ok(response) => {
+                            let response_data = response.into_inner();
+                            log::debug!(
+                                "first page read successful: {} bytes, it will \"hit\" after",
+                                response_data.data.len()
+                            );
+                            Ok(response_data)
+                        }
+                        Err(status) => {
+                            log::error!("first page read failed: {:?}", status);
+                            Err(sqlite_plugin::vars::SQLITE_IOERR_READ)
+                        }
+                    }
+                });
+
+                match result {
+                    Ok(response_data) => {
+                        // Update cache with server data
+                        *cache = response_data.data;
+
+                        // Set the read timestamp
+                        if current_timestamp == 0 && response_data.time_millis != 0 {
+                            *read_timestamp_guard = Some(response_data.time_millis);
+                        }
+                    }
+                    Err(err) => return Err(err),
+                }
+            }
+
+            // Read from cache, handling short reads correctly.
+            let cache_len = cache.len();
+            if offset >= cache_len {
+                return Ok(0); // Reading past the end of the cached file.
+            }
+
+            let readable_bytes = cache_len - offset;
+            let bytes_to_copy = std::cmp::min(data.len(), readable_bytes);
+
+            data[..bytes_to_copy].copy_from_slice(&cache[offset..offset + bytes_to_copy]);
+
+            log::debug!("first page cache hit: read {} bytes", bytes_to_copy);
+            return Ok(bytes_to_copy);
+        }
+
         // Get the current read timestamp or use 0 if we don't have one
         let current_timestamp = self.current_read_timestamp.lock().unwrap_or(0);
 
@@ -450,7 +549,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
         let result = self.runtime.block_on(async {
             let req = ReadRequest {
                 context: self.context.clone(),
-                lease_id: self.lease.lock().clone().unwrap_or("".to_string()),
+                lease_id: lease_id.unwrap_or("".to_string()),
                 file_name: handle.file_path.clone(),
                 offset: offset as i64,
                 length: data.len() as i64,
@@ -642,6 +741,8 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                 self.write_batch_open.store(false, Ordering::Release);
                 // Clear the batch
                 self.write_batch.lock().clear();
+                // Clear the first page cache as it may contain rolled-back data
+                self.first_page_cache.lock().clear();
                 Ok(())
             }
             _ => Err(sqlite_plugin::vars::SQLITE_NOTFOUND),
