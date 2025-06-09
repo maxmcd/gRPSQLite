@@ -10,7 +10,10 @@ _Yes, the name is a pun._
 
 > [!WARNING]
 > This is very early stage software.
+>
 > Only primitive testing is done, and should not be used for production workloads.
+>
+> Documentation and examples are not comprehensive either.
 
 ## Table of Contents <!-- omit in toc -->
 
