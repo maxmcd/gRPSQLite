@@ -200,7 +200,7 @@ The way this works is when you first submit a read for a transaction, the respon
 - Badger
 
 
-**Some databases that CAN NOT support read-only replicas:**
+**Some databases that CANNOT support read-only replicas (at least in isolation):**
 
 - Postgres
 - MySQL
