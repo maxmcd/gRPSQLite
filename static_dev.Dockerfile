@@ -16,8 +16,7 @@ RUN PB_REL="https://github.com/protocolbuffers/protobuf/releases" && \
     rm protoc-$PB_VERSION-linux-x86_64.zip && \
     protoc --version
 
-# Define SQLite version to install (3.45.3 as an example, which is > 3.44.0)
-# You can update these ARGs if a newer SQLite version is needed/preferred
+# Min version supported is 3044000 (3.44.0)
 ARG SQLITE_YEAR=2025
 ARG SQLITE_FILENAME_VERSION=3490200
 ARG SQLITE_TARBALL_FILENAME=sqlite-autoconf-${SQLITE_FILENAME_VERSION}.tar.gz
