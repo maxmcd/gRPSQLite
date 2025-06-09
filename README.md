@@ -217,6 +217,7 @@ This is implemented by:
 1. When the VFS writes, it includes the checksum of the data, which you should store
 2. When the VFS reads, it includes the checksum that it has locally
 3. If the checksum matches what you have at the server you can respond with a blank data array, which tells the VFS to read the data locally
+4. The VFS will read the page into memory, verify the checksum, and return it to SQLite
 
 Depending on how you store data, this can dramatically speed up reads.
 
