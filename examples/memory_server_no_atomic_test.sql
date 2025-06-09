@@ -2,7 +2,7 @@
 .log stderr
 
 .open main.db
-PRAGMA journal_mode; -- we should be in memory mode by default
+PRAGMA journal_mode; -- 'delete' is the default
 PRAGMA locking_mode=exclusive; -- need to be in exclusive mode for wal so that xShm methods are not used (and wal still works, otherwise it will default to delete or memory if you try to set wal)
 PRAGMA journal_mode=wal;
 

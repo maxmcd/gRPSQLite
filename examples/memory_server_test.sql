@@ -2,7 +2,7 @@
 .log stderr
 
 .open main.db
-PRAGMA journal_mode; -- we should be in memory mode by default
+PRAGMA journal_mode; -- 'delete' is the default
 PRAGMA journal_mode=memory;
 
 .databases
