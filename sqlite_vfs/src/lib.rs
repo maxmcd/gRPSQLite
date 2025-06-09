@@ -542,7 +542,41 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
         pragma: sqlite_plugin::vfs::Pragma<'_>,
     ) -> Result<Option<String>, sqlite_plugin::vfs::PragmaErr> {
         log::debug!("pragma: file={:?}, pragma={:?}", handle.file_path, pragma);
-        Err(sqlite_plugin::vfs::PragmaErr::NotFound)
+
+        // Call the gRPC server to handle the pragma
+        let result = self.runtime.block_on(async {
+            let req = PragmaRequest {
+                context: self.context.clone(),
+                lease_id: self.lease.lock().clone().unwrap_or("".to_string()),
+                file_name: handle.file_path.clone(),
+                pragma_name: pragma.name.to_string(),
+                pragma_value: pragma.arg.unwrap_or("").to_string(),
+            };
+
+            match self.grpc_client.clone().pragma(req).await {
+                Ok(response) => {
+                    let pragma_response = response.into_inner();
+                    if pragma_response.response.is_empty() {
+                        Ok(None)
+                    } else {
+                        Ok(Some(pragma_response.response))
+                    }
+                }
+                Err(status) => {
+                    log::debug!("pragma failed: {:?}", status);
+                    if status.code() == tonic::Code::NotFound {
+                        Err(sqlite_plugin::vfs::PragmaErr::NotFound)
+                    } else {
+                        Err(sqlite_plugin::vfs::PragmaErr::Fail(
+                            sqlite_plugin::vars::SQLITE_ERROR,
+                            Some(format!("pragma failed: {}", status.message())),
+                        ))
+                    }
+                }
+            }
+        });
+
+        result
     }
 
     fn file_control(

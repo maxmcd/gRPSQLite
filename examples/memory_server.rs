@@ -187,9 +187,14 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
             "pragma context={} pragma={} value={}",
             pragma_request.context, pragma_request.pragma_name, pragma_request.pragma_value
         );
-        Ok(Response::new(grpsqlite::PragmaResponse {
-            response: "".to_string(), // nothing returned
-        }))
+
+        if pragma_request.pragma_name == "is_memory_server" {
+            return Ok(Response::new(grpsqlite::PragmaResponse {
+                response: "YES!!!!!!".to_string(),
+            }));
+        }
+
+        Err(Status::not_found("pragma not supported"))
     }
 
     async fn truncate(
