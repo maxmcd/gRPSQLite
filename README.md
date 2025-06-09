@@ -19,6 +19,7 @@ _Yes, the name is a pun._
 - [Writing a gRPC server (WIP)](#writing-a-grpc-server-wip)
   - [Handling page sizes and row keys](#handling-page-sizes-and-row-keys)
   - [Reads for missing data](#reads-for-missing-data)
+  - [Leases](#leases)
 - [How it works](#how-it-works)
   - [Atomic batch commits](#atomic-batch-commits)
   - [Read-only Replicas](#read-only-replicas)
@@ -107,7 +108,13 @@ Writes will always be on `page_size` intervals, so you only need to do this tric
 
 ### Reads for missing data
 
-You need to return the requested length data, if it doesn't exist, return zeros
+You need to return the requested length data, if it doesn't exist, return zeros. See examples.
+
+### Leases
+
+When ever a write occurrs, you MUST transactionally verify that the lease is still valid before submitting the write.
+
+If you do not support atomic writes (e.g. backed by S3), then you will have to do either some sort of 2PC, or track metadata (pages) within an external transactional database (e.g. Postgres).
 
 
 ## How it works
