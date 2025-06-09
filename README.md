@@ -102,7 +102,7 @@ Then you can run the following SQL:
 ```
 .log stderr
 .open main.db
-PRAGMA journal_mode=memory; -- this should already be the default
+PRAGMA journal_mode=memory; -- 'delete' is the default
 CREATE TABLE t1(a, b);
 INSERT INTO t1 VALUES(1, 2);
 INSERT INTO t1 VALUES(3, 4);
