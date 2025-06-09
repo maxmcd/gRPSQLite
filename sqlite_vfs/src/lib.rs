@@ -14,6 +14,7 @@ struct Capabilities {
     atomic_batch: bool,
     point_in_time_reads: bool,
     sector_size: i32,
+    heartbeat_interval_millis: i64,
 }
 
 struct GrpcVfs {
@@ -23,14 +24,35 @@ struct GrpcVfs {
     context: String,
     files: Arc<Mutex<Vec<handle::GrpcVfsHandle>>>,
     lease: Arc<Mutex<Option<String>>>,
-
     write_batch: Arc<Mutex<Vec<AtomicWrite>>>,
     write_batch_open: AtomicBool,
-
     current_read_timestamp: Arc<Mutex<Option<i64>>>,
+    heartbeat_shutdown_tx: Arc<Mutex<Option<tokio::sync::oneshot::Sender<()>>>>,
 }
 
 impl GrpcVfs {
+    async fn create_grpc_client() -> Result<
+        grpsqlite_client::GrpsqliteClient<tonic::transport::Channel>,
+        Box<dyn std::error::Error + Send + Sync>,
+    > {
+        let url =
+            std::env::var("GRPC_VFS_URL").unwrap_or_else(|_| "http://localhost:50051".to_string());
+
+        let connect_timeout_secs = std::env::var("GRPC_VFS_CONNECT_TIMEOUT_SECS")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(10);
+
+        let endpoint = tonic::transport::Endpoint::from_shared(url)?
+            .connect_timeout(std::time::Duration::from_secs(connect_timeout_secs))
+            .keep_alive_timeout(std::time::Duration::from_secs(connect_timeout_secs))
+            .keep_alive_while_idle(true)
+            .http2_keep_alive_interval(std::time::Duration::from_secs(connect_timeout_secs));
+
+        let client = grpsqlite_client::GrpsqliteClient::connect(endpoint).await?;
+        Ok(client)
+    }
+
     pub fn new() -> Self {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_time()
@@ -39,21 +61,7 @@ impl GrpcVfs {
             .unwrap(); // SQLite is single-threaded, so we can use a single-threaded runtime
 
         let (client, capabilities, context) = runtime.block_on(async {
-            let url = std::env::var("GRPC_VFS_URL")
-                .unwrap_or_else(|_| "http://localhost:50051".to_string());
-
-            let connect_timeout_secs = std::env::var("GRPC_VFS_CONNECT_TIMEOUT_SECS")
-                .ok()
-                .and_then(|s| s.parse::<u64>().ok())
-                .unwrap_or(10);
-
-            let endpoint = tonic::transport::Endpoint::from_shared(url)
-                .unwrap()
-                .connect_timeout(std::time::Duration::from_secs(connect_timeout_secs));
-
-            let mut client = grpsqlite_client::GrpsqliteClient::connect(endpoint)
-                .await
-                .unwrap();
+            let mut client = Self::create_grpc_client().await.unwrap();
 
             let req = GetCapabilitiesRequest {
                 client_token: std::env::var("GRPC_VFS_CLIENT_TOKEN")
@@ -68,6 +76,7 @@ impl GrpcVfs {
                 atomic_batch: capabilities_response.atomic_batch,
                 point_in_time_reads: capabilities_response.point_in_time_reads,
                 sector_size: capabilities_response.sector_size,
+                heartbeat_interval_millis: capabilities_response.heartbeat_interval_millis,
             };
 
             (client, capabilities, capabilities_response.context)
@@ -83,7 +92,110 @@ impl GrpcVfs {
             write_batch: Arc::new(Mutex::new(vec![])),
             write_batch_open: AtomicBool::new(false),
             current_read_timestamp: Arc::new(Mutex::new(None)),
+            heartbeat_shutdown_tx: Arc::new(Mutex::new(None)),
         }
+    }
+
+    fn start_heartbeat_thread(&self) {
+        // Create shutdown channel
+        let (shutdown_tx, mut shutdown_rx) = tokio::sync::oneshot::channel();
+        *self.heartbeat_shutdown_tx.lock() = Some(shutdown_tx);
+
+        // Launch heartbeat thread to keep the lease alive
+        let context = self.context.clone();
+        let lease = self.lease.clone();
+        let heartbeat_interval = if self.capabilities.heartbeat_interval_millis == 0 {
+            5000
+        } else {
+            self.capabilities.heartbeat_interval_millis
+        } as u64;
+
+        log::debug!(
+            "starting heartbeat thread with interval: {}ms",
+            heartbeat_interval
+        );
+
+        std::thread::spawn(move || {
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_time()
+                .enable_io()
+                .build()
+                .unwrap();
+
+            rt.block_on(async {
+                // Create a new gRPC client within this runtime using the factory (otherwise it will hang because of the shared channel)
+                let grpc_client = match GrpcVfs::create_grpc_client().await {
+                    Ok(client) => client,
+                    Err(e) => {
+                        log::error!("Failed to connect gRPC client in heartbeat thread: {:?}", e);
+                        return;
+                    }
+                };
+                let mut interval =
+                    tokio::time::interval(std::time::Duration::from_millis(heartbeat_interval));
+
+                // Consume the immediate first tick - we want to wait one full interval before first heartbeat
+                interval.tick().await;
+
+                loop {
+                    tokio::select! {
+                        _ = interval.tick() => {
+                            // Check if we still have a lease
+                            let lease_id = {
+                                let lease_guard = lease.lock();
+                                lease_guard.as_ref().map(|l| l.clone())
+                            };
+
+                            if let Some(lease_id) = lease_id {
+                                let req = HeartbeatLeaseRequest {
+                                    context: context.clone(),
+                                    lease_id,
+                                };
+
+                                log::debug!("heartbeating lease: {:?}", req);
+
+                                // Add timeout to prevent hanging
+                                let heartbeat_result = tokio::time::timeout(
+                                    std::time::Duration::from_millis(heartbeat_interval),
+                                    grpc_client.clone().heartbeat_lease(req)
+                                ).await;
+
+                                match heartbeat_result {
+                                    Ok(Ok(_)) => {
+                                        log::debug!("heartbeat successful");
+                                    }
+                                    Ok(Err(status)) => {
+                                        if status.code() == tonic::Code::NotFound {
+                                            log::error!("heartbeat failed - lease not found: {:?}", status);
+                                            log::debug!("lease has been lost, exiting heartbeat loop");
+                                            break;
+                                        } else {
+                                            log::warn!(
+                                                "heartbeat failed with transient error: {:?}",
+                                                status
+                                            );
+                                            // Continue the loop for transient errors
+                                        }
+                                    }
+                                    Err(_) => {
+                                        log::warn!("heartbeat timed out after {}ms, continuing...", heartbeat_interval);
+                                        // Continue the loop on timeout
+                                    }
+                                }
+                            } else {
+                                // No lease to heartbeat, exit the loop
+                                log::debug!("no lease to heartbeat, exiting heartbeat loop");
+                                break;
+                            }
+                        }
+                        _ = &mut shutdown_rx => {
+                            log::debug!("heartbeat thread received shutdown signal");
+                            break;
+                        }
+                    }
+                }
+            });
+        });
     }
 }
 
@@ -146,6 +258,10 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                         let lease_response = response.into_inner();
                         log::debug!("lease acquired: {:?}", lease_response.lease_id);
                         *self.lease.lock() = Some(lease_response.lease_id);
+
+                        // Start the heartbeat thread to keep the lease alive
+                        self.start_heartbeat_thread();
+
                         Ok(())
                     }
                     Err(status) => {
@@ -153,7 +269,6 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                         Err(sqlite_plugin::vars::SQLITE_CANTOPEN)
                     }
                 }
-                // TODO: launch heartbeat task (or thread?)
             });
 
             if let Err(err) = lease_result {
@@ -161,7 +276,11 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
             }
         }
 
-        let handle = handle::GrpcVfsHandle::new(path.unwrap_or("").to_string(), mode.is_readonly());
+        let handle = handle::GrpcVfsHandle::new(
+            path.unwrap_or("").to_string(),
+            mode.is_readonly(),
+            opts.kind() == sqlite_plugin::flags::OpenKind::MainDb,
+        );
         self.files.lock().push(handle.clone());
         Ok(handle)
     }
@@ -390,6 +509,16 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
 
         let mut files = self.files.lock();
         files.retain(|f| f.file_path != handle.file_path);
+
+        // If we have a lease and this looks like the main database file (not -wal or -wal2),
+        // signal the heartbeat thread to shutdown
+        if self.lease.lock().is_some() && handle.is_main_db {
+            log::debug!("signaling heartbeat thread to shutdown for main database close");
+            if let Some(shutdown_tx) = self.heartbeat_shutdown_tx.lock().take() {
+                let _ = shutdown_tx.send(()); // Ignore if receiver is already dropped
+            }
+        }
+
         Ok(())
     }
 

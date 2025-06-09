@@ -227,6 +227,8 @@ Luckily, your backing DB probably does.
 
 Local page caching tracks checksums in memory, verifying page content when reading from disk.
 
+[Because the first page of the DB is accessed so aggressively, it's always cached in memory.](https://github.com/danthegoodman1/gRPSQLite/issues/5)
+
 ## Performance
 
 Performance can be either worse, or better, than a traditional SQLite-on-EBS setup:

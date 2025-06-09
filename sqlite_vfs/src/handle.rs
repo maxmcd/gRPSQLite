@@ -2,13 +2,15 @@
 pub struct GrpcVfsHandle {
     pub file_path: String,
     read_only: bool,
+    pub is_main_db: bool,
 }
 
 impl GrpcVfsHandle {
-    pub fn new(file_path: String, read_only: bool) -> Self {
+    pub fn new(file_path: String, read_only: bool, is_main_db: bool) -> Self {
         Self {
             file_path,
             read_only,
+            is_main_db,
         }
     }
 }

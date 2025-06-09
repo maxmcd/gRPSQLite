@@ -90,6 +90,9 @@ message GetCapabilitiesResponse {
 
   // The sector size of the file system, generally 4096.
   int32 sector_size = 4;
+
+  // The heartbeat interval in milliseconds. If 0, will default to 5000.
+  int64 heartbeat_interval_millis = 5;
 }
 
 message AcquireLeaseRequest {
