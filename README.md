@@ -1,6 +1,6 @@
 # gRPSQLite <!-- omit in toc -->
 
-gRPC + SQLite enabling you to easily build multitenant, metered, bottomless, infinite SQLite databases backed by anything you can dream of.  Implement by making a gRPC server and using a pre-made VFS.
+gRPC + SQLite enabling you to easily build multitenant, metered, bottomless, infinite SQLite databases backed by anything you can dream of. Implement by making a gRPC server and using a pre-made VFS.
 
 Give every user, human or AI, as many SQLite databases as they want.
 
