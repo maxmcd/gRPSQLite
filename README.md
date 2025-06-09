@@ -215,8 +215,8 @@ For the leased instance, you can configure the VFS to locally-cache pages. This 
 
 This is implemented by:
 1. When the VFS writes, it includes the checksum of the data, which you should store
-2. When the VFS reads, it includes the checksum that it has locally, and you can compare to what you have
-3. If the checksum matches what you have, you can respond with a blank data array, which tells the VFS to read the data locally
+2. When the VFS reads, it includes the checksum that it has locally
+3. If the checksum matches what you have at the server you can respond with a blank data array, which tells the VFS to read the data locally
 
 Depending on how you store data, this can dramatically speed up reads.
 
