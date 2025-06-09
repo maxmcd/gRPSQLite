@@ -26,7 +26,7 @@ _Yes, the name is a pun._
 - [How it works](#how-it-works)
   - [Atomic batch commits](#atomic-batch-commits)
   - [Read-only Replicas](#read-only-replicas)
-  - [Checksums](#checksums)
+  - [Local Page Caching (TODO)](#local-page-caching-todo)
 - [Performance](#performance)
 - [Contributing](#contributing)
 
@@ -175,13 +175,22 @@ The way this works is when you first submit a read for a transaction, the respon
 - Most filesystems
 - SQLite
 
-### Checksums
+### Local Page Caching ([TODO](https://github.com/danthegoodman1/gRPSQLite/issues/3))
+
+For the leased instance, you can configure the VFS to locally-cache pages. This means that reads for pages that haven't changed since the last time the VFS saw it are faster.
+
+This is implemented by:
+1. When the VFS writes, it includes the checksum of the data, which you should store
+2. When the VFS reads, it includes the checksum that it has locally, and you can compare to what you have
+3. If the checksum matches what you have, you can respond with a blank data array, which tells the VFS to read the data locally
+
+Depending on how you store data, this can dramatically speed up reads.
 
 By default, SQLite doesn't do page checksums 😵‍💫
 
 Luckily, your backing DB probably does.
 
-Local page caching tracks checksums in memory, and if enabled, will submit them with each write. That way your server doesn't have to worry about implementing the checksums.
+Local page caching tracks checksums in memory, verifying page content when reading from disk.
 
 ## Performance
 
