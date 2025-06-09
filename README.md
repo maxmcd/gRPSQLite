@@ -59,14 +59,16 @@ This will produce a `target/release/libsqlite_vfs.so` that you can use in SQLite
 .load path/to/libsqlite_vfs.so
 ```
 
+This also sets it as the default VFS.
+
 ### Statically compiling
 
 The process:
 1. Building a static lib
-2. Using a little C stub for initializing (sets the default VFS)
+2. Use a little C stub for initializing the VFS on start (sets the default VFS)
 3. Compile SQLite with the C stub and static library
 
-For statically compiling into a SQLite distribution, see the [`static_dev.Dockerfile`](static_dev.Dockerfile) example which does all of this automatically (you'll probably want to build with `--release` though).
+See the [`static_dev.Dockerfile`](static_dev.Dockerfile) example which does all of these steps (you'll probably want to build with `--release` though).
 
 ### Memory VFS with atomic commit example
 
