@@ -97,15 +97,15 @@ In the third terminal run:
 docker exec -it grpsqlite sqlite3_with_grpsqlite
 ```
 
-Then you can run example sql commands:
+Then you can run the following SQL:
 
 ```
 .log stderr
 .open main.db
-PRAGMA journal_mode=memory;
+PRAGMA journal_mode=memory; -- this should already be the default
 CREATE TABLE t1(a, b);
-SELECT * FROM t1;
 INSERT INTO t1 VALUES(1, 2);
+INSERT INTO t1 VALUES(3, 4);
 SELECT * FROM t1;
 
 ```
@@ -117,7 +117,6 @@ Then you can ctrl-c the third terminal, `docker exec` again, and see that the da
 ```
 .log stderr
 .open main.db
-PRAGMA journal_mode=memory;
 SELECT * FROM t1;
 
 ```
