@@ -16,6 +16,9 @@ _Yes, the name is a pun._
 
 - [Examples](#examples)
   - [Memory VFS with atomic commit example](#memory-vfs-with-atomic-commit-example)
+- [Writing a gRPC server (WIP)](#writing-a-grpc-server-wip)
+  - [Handling page sizes and row keys](#handling-page-sizes-and-row-keys)
+  - [Reads for missing data](#reads-for-missing-data)
 - [How it works](#how-it-works)
   - [Atomic batch commits](#atomic-batch-commits)
   - [Read-only Replicas](#read-only-replicas)
@@ -77,6 +80,34 @@ PRAGMA journal_mode=memory;
 SELECT * FROM t1;
 
 ```
+
+## Writing a gRPC server (WIP)
+
+An over-simplification is you are effectively writing a remote block device.
+
+### Handling page sizes and row keys
+
+Because SQLite uses stable page sizes (and predictable database/wal headers), you can key by the `% page_size` (sometimes called `sector_size`) interval.
+
+This VFS has `SQLITE_IOCAP_SUBPAGE_READ` (which would allow it to read at non-page offsets).
+
+However, it will still often read at special offsets and lengths for the database header. The following is an example of what operations are valled on the main db file when it is first opened:
+
+```
+read            file=main.db offset=0 length=100
+get_file_size   file=main.db
+read            file=main.db offset=0 length=4096
+read            file=main.db offset=24 length=16
+get_file_size   file=main.db
+```
+
+The simplest way to handle this is when ever you get an offset for a read, use the key `offset % page_size`. You should still return the data at the expected offset and length to the gRPC call.
+
+Writes will always be on `page_size` intervals, so you only need to do this trick for reads. Writes can just use the offset as the primary key, and will always contain `page_size` length data.
+
+### Reads for missing data
+
+You need to return the requested length data, if it doesn't exist, return zeros
 
 
 ## How it works
