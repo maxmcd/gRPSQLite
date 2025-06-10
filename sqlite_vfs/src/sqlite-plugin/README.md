@@ -7,6 +7,10 @@
   <a href="https://crates.io/crates/sqlite-plugin"><img alt="crates.io" src="https://img.shields.io/crates/v/sqlite-plugin.svg"></a>
 </p>
 
+> [!NOTE]
+> This is a vendored copy of [sqlite-plugin](https://github.com/orbitinghail/sqlite-plugin),
+> which without this project would not have been so easily achieved!
+
 `sqlite-plugin` provides a streamlined and flexible way to implement SQLite virtual file systems (VFS) in Rust. Inspired by [sqlite-vfs], it offers a distinct design with key enhancements:
 
 - **Centralized Control**: The `Vfs` trait intercepts all file operations at the VFS level, rather than delegating them directly to file handles. This simplifies shared state management and enables more advanced behaviors.
