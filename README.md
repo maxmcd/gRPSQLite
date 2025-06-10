@@ -6,7 +6,7 @@ Give every user, human or AI, as many SQLite databases as they want.
 
 Uses real SQLite, so it works with everything that SQLite does (packages, extensions, apps, etc.)
 
-_Yes, the name is a pun._
+_It's like FUSE for SQLite. Yes, the name is a pun._
 
 > [!WARNING]
 > This is very early stage software.
