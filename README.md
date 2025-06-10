@@ -198,6 +198,7 @@ The way this works is when you first submit a read for a transaction, the respon
 - CockroachDB (via `AS OF SYSTEM TIME`)
 - RocksDB
 - Badger
+- [Git repos...](https://github.com/danthegoodman1/gRPSQLite/issues/8)
 
 
 **Some databases that CANNOT support read-only replicas (at least in isolation):**
