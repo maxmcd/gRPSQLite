@@ -79,8 +79,8 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
     ) -> Result<Response<grpsqlite::ReadResponse>, Status> {
         let inner = request.into_inner();
         println!(
-            "read context={} file={} offset={} length={}",
-            inner.context, inner.file_name, inner.offset, inner.length
+            "read context={} file={} offset={} length={} checksum={}",
+            inner.context, inner.file_name, inner.offset, inner.length, inner.checksum
         );
         let files = self.files.lock().unwrap();
         let file = files
@@ -96,6 +96,7 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
             return Ok(Response::new(grpsqlite::ReadResponse {
                 data: vec![],
                 time_millis: 0, // no time
+                checksum: 0,    // no checksum
             }));
         }
 
@@ -108,6 +109,7 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
         Ok(Response::new(grpsqlite::ReadResponse {
             data,
             time_millis: 0, // no time
+            checksum: 0,    // no checksum
         }))
     }
 
@@ -117,11 +119,12 @@ impl grpsqlite::grpsqlite_server::Grpsqlite for MemoryVfs {
     ) -> Result<Response<()>, Status> {
         let inner = request.into_inner();
         println!(
-            "write context={} file={} offset={} length={}",
+            "write context={} file={} offset={} length={} checksum={}",
             inner.context,
             inner.file_name,
             inner.offset,
-            inner.data.len()
+            inner.data.len(),
+            inner.checksum
         );
         let mut files = self.files.lock().unwrap();
         let file = files.entry(inner.file_name).or_insert_with(Vec::new);

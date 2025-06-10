@@ -128,14 +128,31 @@ message ReadRequest {
   // point-in-time reads. If not provided, the server will provide one that
   // should be used for future reads in the current transaction
   int64 time_millis = 7;
+
+  // The checksum of the data IF the data is cached locally.
+  // If provided, then the server may choose to respond with an empty data
+  // array, and a matching checksum to indicate that the client can use the
+  // cached data. If the local data fails to verify, it will re-request the
+  // data from the server without the checksum.
+  uint64 checksum = 8;
 }
 
 message ReadResponse {
+  // The data. If the read request provided a checksum, and the client has a
+  // cached copy of the data, the server may choose to respond with an empty
+  // data array, and a matching checksum to indicate that the client can use the
+  // cached data.
   bytes data = 1;
 
   // The point in time in unix milliseconds to continue to read from in the
   // current transaction if the server supports point-in-time reads.
   int64 time_millis = 2;
+
+  // The checksum of the data. If the client provided the matching checksum in
+  // the request, and the client has the data cached locally, it will read that
+  // instead (after verifying the checksum). If the local data fails to verify,
+  // it will re-request the data from the server without the checksum.
+  uint64 checksum = 3;
 }
 
 message WriteRequest {
@@ -145,6 +162,9 @@ message WriteRequest {
   string file_name = 3;
   int64 offset = 4;
   bytes data = 6;
+
+  // The xxhash64 checksum of the data.
+  uint64 checksum = 7;
 }
 
 message AtomicWrite {
@@ -152,6 +172,9 @@ message AtomicWrite {
   string lease_id = 2;
   int64 offset = 3;
   bytes data = 4;
+
+  // The xxhash64 checksum of the data.
+  uint64 checksum = 5;
 }
 
 message AtomicWriteBatchRequest {

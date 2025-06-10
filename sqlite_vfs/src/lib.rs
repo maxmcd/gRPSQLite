@@ -5,6 +5,7 @@ use std::sync::{
 };
 
 use parking_lot::Mutex;
+use xxhash_rust::xxh3::xxh3_64;
 
 tonic::include_proto!("grpc_vfs");
 
@@ -411,6 +412,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                 data: data.to_vec(),
                 context: self.context.clone(),
                 lease_id: lease_id.unwrap_or("".to_string()),
+                checksum: xxh3_64(data),
             });
 
             // Update first page cache as part of the batch
@@ -431,6 +433,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                 data: data.to_vec(),
                 file_name: handle.file_path.clone(),
                 offset: offset as i64,
+                checksum: xxh3_64(data),
             };
 
             match self.grpc_client.clone().write(req).await {
@@ -495,6 +498,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                         offset: 0, // Always read from start for first page
                         length: self.capabilities.sector_size as i64,
                         time_millis: current_timestamp,
+                        checksum: 0, // Empty checksum for now
                     };
 
                     match self.grpc_client.clone().read(req).await {
@@ -554,6 +558,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                 offset: offset as i64,
                 length: data.len() as i64,
                 time_millis: current_timestamp,
+                checksum: 0, // Empty checksum for now
             };
 
             match self.grpc_client.clone().read(req).await {
