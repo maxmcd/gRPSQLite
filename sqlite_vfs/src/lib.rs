@@ -3,6 +3,7 @@ use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
 };
+use std::time::Instant;
 
 use parking_lot::Mutex;
 use xxhash_rust::xxh3::xxh3_64;
@@ -72,7 +73,9 @@ impl GrpcVfs {
                 readonly: false,
             };
 
+            let start = Instant::now();
             let res = client.get_capabilities(req).await;
+            log::debug!("get_capabilities took {:?}", start.elapsed());
             let capabilities_response = res.unwrap().into_inner();
             let capabilities = Capabilities {
                 atomic_batch: capabilities_response.atomic_batch,
@@ -158,18 +161,18 @@ impl GrpcVfs {
                                 log::debug!("heartbeating lease: {:?}", req);
 
                                 // Add timeout to prevent hanging
-                                let heartbeat_result = tokio::time::timeout(
+                                let start = std::time::Instant::now();
+
+                                match tokio::time::timeout(
                                     std::time::Duration::from_millis(heartbeat_interval),
                                     grpc_client.clone().heartbeat_lease(req)
-                                ).await;
-
-                                match heartbeat_result {
+                                ).await {
                                     Ok(Ok(_)) => {
-                                        log::debug!("heartbeat successful");
+                                        log::debug!("heartbeat successful in {:?}", start.elapsed());
                                     }
                                     Ok(Err(status)) => {
                                         if status.code() == tonic::Code::NotFound {
-                                            log::error!("heartbeat failed - lease not found: {:?}", status);
+                                            log::error!("heartbeat failed in {:?} - lease not found: {:?}", start.elapsed(), status);
                                             log::debug!("lease has been lost, exiting heartbeat loop");
                                             break;
                                         } else {
@@ -256,8 +259,10 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                 };
 
                 log::debug!("acquiring lease for main db {}", path.unwrap_or(""));
+                let start = Instant::now();
                 match self.grpc_client.clone().acquire_lease(req).await {
                     Ok(response) => {
+                        log::debug!("acquire_lease completed in {:?}", start.elapsed());
                         let lease_response = response.into_inner();
                         log::debug!("lease acquired: {:?}", lease_response.lease_id);
                         *self.lease.lock() = Some(lease_response.lease_id);
@@ -268,6 +273,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                         Ok(())
                     }
                     Err(status) => {
+                        log::debug!("acquire_lease errored in {:?}", start.elapsed());
                         log::error!("failed to acquire lease: {:?}", status);
                         Err(sqlite_plugin::vars::SQLITE_CANTOPEN)
                     }
@@ -299,11 +305,14 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                 file_name: path.to_string(),
             };
 
+            let start = Instant::now();
             match self.grpc_client.clone().delete(req).await {
                 Ok(response) => {
+                    log::debug!("delete completed in {:?}", start.elapsed());
                     log::debug!("delete successful: {:?}", response.into_inner());
                 }
                 Err(status) => {
+                    log::debug!("delete errored in {:?}", start.elapsed());
                     log::error!("delete failed: {:?}", status);
                 }
             }
@@ -333,13 +342,16 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                 file_name: handle.file_path.clone(),
             };
 
+            let start = Instant::now();
             match self.grpc_client.clone().get_file_size(req).await {
                 Ok(response) => {
+                    log::debug!("get_file_size completed in {:?}", start.elapsed());
                     let size = response.into_inner().size;
                     log::debug!("file_size is: {}", size);
                     Ok(size as usize)
                 }
                 Err(status) => {
+                    log::debug!("get_file_size errored in {:?}", start.elapsed());
                     log::error!("get_file_size failed: {:?}", status);
                     Err(sqlite_plugin::vars::SQLITE_IOERR_FSTAT)
                 }
@@ -362,12 +374,15 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                 size: size as i64,
             };
 
+            let start = Instant::now();
             match self.grpc_client.clone().truncate(req).await {
                 Ok(response) => {
+                    log::debug!("truncate completed in {:?}", start.elapsed());
                     log::debug!("truncate successful: {:?}", response.into_inner());
                     Ok(())
                 }
                 Err(status) => {
+                    log::debug!("truncate errored in {:?}", start.elapsed());
                     log::error!("truncate failed: {:?}", status);
                     Err(sqlite_plugin::vars::SQLITE_IOERR_TRUNCATE)
                 }
@@ -436,12 +451,15 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                 checksum: xxh3_64(data),
             };
 
+            let start = Instant::now();
             match self.grpc_client.clone().write(req).await {
                 Ok(response) => {
+                    log::debug!("write completed in {:?}", start.elapsed());
                     log::debug!("write successful: {:?}", response.into_inner());
                     Ok(())
                 }
                 Err(status) => {
+                    log::debug!("write errored in {:?}", start.elapsed());
                     log::error!("write failed: {:?}", status);
                     Err(sqlite_plugin::vars::SQLITE_IOERR_WRITE)
                 }
@@ -501,8 +519,10 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                         checksum: 0, // Empty checksum for now
                     };
 
+                    let start = Instant::now();
                     match self.grpc_client.clone().read(req).await {
                         Ok(response) => {
+                            log::debug!("read (first page cache miss) took {:?}", start.elapsed());
                             let response_data = response.into_inner();
                             log::debug!(
                                 "first page read successful: {} bytes, it will \"hit\" after",
@@ -511,6 +531,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                             Ok(response_data)
                         }
                         Err(status) => {
+                            log::debug!("read (first page cache miss) took {:?}", start.elapsed());
                             log::error!("first page read failed: {:?}", status);
                             Err(sqlite_plugin::vars::SQLITE_IOERR_READ)
                         }
@@ -561,13 +582,16 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                 checksum: 0, // Empty checksum for now
             };
 
+            let start = Instant::now();
             match self.grpc_client.clone().read(req).await {
                 Ok(response) => {
+                    log::debug!("read completed in {:?}", start.elapsed());
                     let response_data = response.into_inner();
                     log::debug!("read successful: {} bytes", response_data.data.len());
                     Ok(response_data)
                 }
                 Err(status) => {
+                    log::debug!("read errored in {:?}", start.elapsed());
                     log::error!("read failed: {:?}", status);
                     Err(sqlite_plugin::vars::SQLITE_IOERR_READ)
                 }
@@ -601,11 +625,14 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                 file_name: handle.file_path.clone(),
             };
 
+            let start = Instant::now();
             match self.grpc_client.clone().close(req).await {
                 Ok(response) => {
+                    log::debug!("close completed in {:?}", start.elapsed());
                     log::debug!("close successful: {:?}", response.into_inner());
                 }
                 Err(status) => {
+                    log::debug!("close errored in {:?}", start.elapsed());
                     log::error!("close failed: {:?}", status);
                 }
             }
@@ -657,8 +684,10 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                 pragma_value: pragma.arg.unwrap_or("").to_string(),
             };
 
+            let start = Instant::now();
             match self.grpc_client.clone().pragma(req).await {
                 Ok(response) => {
+                    log::debug!("pragma completed in {:?}", start.elapsed());
                     let pragma_response = response.into_inner();
                     if pragma_response.response.is_empty() {
                         Ok(None)
@@ -667,6 +696,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                     }
                 }
                 Err(status) => {
+                    log::debug!("pragma errored in {:?}", start.elapsed());
                     log::debug!("pragma failed: {:?}", status);
                     if status.code() == tonic::Code::NotFound {
                         Err(sqlite_plugin::vfs::PragmaErr::NotFound)
@@ -717,8 +747,10 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                         writes: batch,
                     };
 
+                    let start = Instant::now();
                     match self.grpc_client.clone().atomic_write_batch(req).await {
                         Ok(response) => {
+                            log::debug!("atomic write batch completed in {:?}", start.elapsed());
                             log::debug!(
                                 "atomic write batch successful: {:?}",
                                 response.into_inner()
@@ -726,6 +758,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                             Ok(())
                         }
                         Err(status) => {
+                            log::debug!("atomic write batch errored in {:?}", start.elapsed());
                             log::error!("atomic write batch failed: {:?}", status);
                             Err(sqlite_plugin::vars::SQLITE_IOERR_WRITE)
                         }
