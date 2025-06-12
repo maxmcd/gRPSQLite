@@ -16,9 +16,15 @@ name = "memory_server"
 [[example]]
 name = "memory_server_no_atomic"
 
+[[example]]
+name = "versioned_memory_server"
+
 [workspace]
 resolver = "3"
 members = ["sqlite_vfs"]
 
 [build-dependencies]
 tonic-build = "0.13.1"
+
+[dev-dependencies]
+im = "15.1.0"

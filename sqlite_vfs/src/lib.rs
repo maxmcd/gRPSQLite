@@ -572,6 +572,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
 
         // Read from the server
         let result = self.runtime.block_on(async {
+            log::debug!("reading from server with timestamp: {}", current_timestamp);
             let req = ReadRequest {
                 context: self.context.clone(),
                 lease_id: lease_id.unwrap_or("".to_string()),
