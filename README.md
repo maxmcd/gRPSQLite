@@ -18,18 +18,18 @@ _It's like FUSE for SQLite. Yes, the name is a pun._
 ## Table of Contents <!-- omit in toc -->
 
 - [Server Examples](#server-examples)
-- [Client Examples (WIP)](#client-examples-wip)
+  - [Memory VFS with atomic commit example](#memory-vfs-with-atomic-commit-example)
+- [SQLite VFS: Dynamic vs Static](#sqlite-vfs-dynamic-vs-static)
   - [Dynamic Loading](#dynamic-loading)
   - [Statically compiling](#statically-compiling)
-  - [Memory VFS with atomic commit example](#memory-vfs-with-atomic-commit-example)
-- [Writing a gRPC server (WIP)](#writing-a-grpc-server-wip)
-  - [Handling page sizes and row keys](#handling-page-sizes-and-row-keys)
-  - [Reads for missing data](#reads-for-missing-data)
-  - [Leases](#leases)
 - [How it works](#how-it-works)
   - [Atomic batch commits](#atomic-batch-commits)
   - [Read-only Replicas](#read-only-replicas)
   - [Local Page Caching (TODO)](#local-page-caching-todo)
+- [Tips for Writing a gRPC server](#tips-for-writing-a-grpc-server)
+  - [Handling page sizes and row keys](#handling-page-sizes-and-row-keys)
+  - [Reads for missing data](#reads-for-missing-data)
+  - [Leases](#leases)
 - [Performance](#performance)
 - [Contributing](#contributing)
 
@@ -47,38 +47,6 @@ And their associated `.sql` files.
 
 More examples will be added in the future, but you can see pretty quickly how you can use any language to implement a gRPC server,
 backed by your favorite database.
-
-## Client Examples (WIP)
-
-There are 2 ways of using the SQLite VFS:
-
-1. Dynamically load the VFS
-2. Statically compile the VFS into a SQLite binary
-
-Statically compiling in is the smoothest experience, as it becomes the default VFS when you open a database file without having to load anything.
-
-### Dynamic Loading
-
-```
-cargo build --release -p sqlite_vfs --features dynamic
-```
-
-This will produce a `target/release/libsqlite_vfs.so` that you can use in SQLite:
-
-```
-.load path/to/libsqlite_vfs.so
-```
-
-This also sets it as the default VFS.
-
-### Statically compiling
-
-The process:
-1. Building a static lib
-2. Use a little C stub for initializing the VFS on start (sets the default VFS)
-3. Compile SQLite with the C stub and static library
-
-See the [`static_dev.Dockerfile`](static_dev.Dockerfile) example which does all of these steps (you'll probably want to build with `--release` though).
 
 ### Memory VFS with atomic commit example
 
@@ -131,40 +99,37 @@ SELECT * FROM t1;
 
 ```
 
-## Writing a gRPC server (WIP)
+## SQLite VFS: Dynamic vs Static
 
-An over-simplification is you are effectively writing a remote block device.
+There are 2 ways of using the SQLite VFS:
 
-### Handling page sizes and row keys
+1. Dynamically load the VFS
+2. Statically compile the VFS into a SQLite binary
 
-Because SQLite uses stable page sizes (and predictable database/wal headers), you can key by the `% page_size` (sometimes called `sector_size`) interval.
+Statically compiling in is the smoothest experience, as it becomes the default VFS when you open a database file without having to load anything.
 
-This VFS has `SQLITE_IOCAP_SUBPAGE_READ` (which would allow it to read at non-page offsets).
-
-However, it will still often read at special offsets and lengths for the database header. The following is an example of what operations are valled on the main db file when it is first opened:
+### Dynamic Loading
 
 ```
-read            file=main.db offset=0 length=100
-get_file_size   file=main.db
-read            file=main.db offset=0 length=4096
-read            file=main.db offset=24 length=16
-get_file_size   file=main.db
+cargo build --release -p sqlite_vfs --features dynamic
 ```
 
-The simplest way to handle this is when ever you get an offset for a read, use the key `offset % page_size`. You should still return the data at the expected offset and length to the gRPC call.
+This will produce a `target/release/libsqlite_vfs.so` that you can use in SQLite:
 
-Writes will always be on `page_size` intervals, so you only need to do this trick for reads. Writes can just use the offset as the primary key, and will always contain `page_size` length data.
+```
+.load path/to/libsqlite_vfs.so
+```
 
-### Reads for missing data
+This also sets it as the default VFS.
 
-You need to return the requested length data, if it doesn't exist, return zeros. See examples.
+### Statically compiling
 
-### Leases
+The process:
+1. Building a static lib
+2. Use a little C stub for initializing the VFS on start (sets the default VFS)
+3. Compile SQLite with the C stub and static library
 
-When ever a write occurrs, you MUST transactionally verify that the lease is still valid before submitting the write.
-
-If you do not support atomic writes (e.g. backed by S3), then you will have to do either some sort of 2PC, or track metadata (pages) within an external transactional database (e.g. Postgres).
-
+See the [`static_dev.Dockerfile`](static_dev.Dockerfile) example which does all of these steps (you'll probably want to build with `--release` though).
 
 ## How it works
 
@@ -241,6 +206,41 @@ Luckily, your backing DB probably does.
 Local page caching tracks checksums in memory, verifying page content when reading from disk.
 
 [Because the first page of the DB is accessed so aggressively, it's always cached in memory.](https://github.com/danthegoodman1/gRPSQLite/issues/5)
+
+## Tips for Writing a gRPC server
+
+An over-simplification is you are effectively writing a remote block device.
+
+### Handling page sizes and row keys
+
+Because SQLite uses stable page sizes (and predictable database/wal headers), you can key by the `% page_size` (sometimes called `sector_size`) interval.
+
+This VFS has `SQLITE_IOCAP_SUBPAGE_READ` (which would allow it to read at non-page offsets).
+
+However, it will still often read at special offsets and lengths for the database header. The following is an example of what operations are valled on the main db file when it is first opened:
+
+```
+read            file=main.db offset=0 length=100
+get_file_size   file=main.db
+read            file=main.db offset=0 length=4096
+read            file=main.db offset=24 length=16
+get_file_size   file=main.db
+```
+
+The simplest way to handle this is when ever you get an offset for a read, use the key `offset % page_size`. You should still return the data at the expected offset and length to the gRPC call.
+
+Writes will always be on `page_size` intervals, so you only need to do this trick for reads. Writes can just use the offset as the primary key, and will always contain `page_size` length data.
+
+### Reads for missing data
+
+You need to return the requested length data, if it doesn't exist, return zeros. See examples.
+
+### Leases
+
+When ever a write occurrs, you MUST transactionally verify that the lease is still valid before submitting the write.
+
+If you do not support atomic writes (e.g. backed by S3), then you will have to do either some sort of 2PC, or track metadata (pages) within an external transactional database (e.g. Postgres).
+
 
 ## Performance
 
