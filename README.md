@@ -38,6 +38,16 @@ _It's like FUSE for SQLite. Yes, the name is a pun._
 
 See the [`examples/`](examples/) directory for example server implementations.
 
+At the time of writing, there are Rust server examples for:
+- [Memory server (atomic batched writes)](examples/memory_server.rs)
+- [Memory server (non-batched writes)](examples/memory_server_no_atomic.rs)
+- [Memory server (atomic + timestamped writes to support read replicas)](examples/versioned_memory_server.rs)
+
+And their associated `.sql` files.
+
+More examples will be added in the future, but you can see pretty quickly how you can use any language to implement a gRPC server,
+backed by your favorite database.
+
 ## Client Examples (WIP)
 
 There are 2 ways of using the SQLite VFS:
