@@ -18,7 +18,8 @@ _It's like FUSE for SQLite. Yes, the name is a pun._
 ## Table of Contents <!-- omit in toc -->
 
 - [Server Examples](#server-examples)
-  - [Memory VFS with atomic commit example](#memory-vfs-with-atomic-commit-example)
+  - [Example: In-memory server with atomic commits](#example-in-memory-server-with-atomic-commits)
+  - [Example: In-memory server with read-replica support](#example-in-memory-server-with-read-replica-support)
 - [SQLite VFS: Dynamic vs Static](#sqlite-vfs-dynamic-vs-static)
   - [Dynamic Loading](#dynamic-loading)
   - [Statically compiling](#statically-compiling)
@@ -48,7 +49,7 @@ And their associated `.sql` files.
 More examples will be added in the future, but you can see pretty quickly how you can use any language to implement a gRPC server,
 backed by your favorite database.
 
-### Memory VFS with atomic commit example
+### Example: In-memory server with atomic commits
 
 You need 3 terminals.
 
@@ -98,6 +99,18 @@ Then you can ctrl-c the third terminal, `docker exec` again, and see that the da
 SELECT * FROM t1;
 
 ```
+
+### Example: In-memory server with read-replica support
+
+See [`examples/versioned_memory_server_test.sql`](examples/versioned_memory_server_test.sql) and the server [`examples/versioned_memory_server.rs`](examples/versioned_memory_server.rs)
+
+Like the above, but you'll want to change the server command to:
+
+```
+docker exec -it grpsqlite cargo run --example versioned_memory_server
+```
+
+As well as running 2 SQLite clients as indicated in the `.sql` file (one RW, one RO).
 
 ## SQLite VFS: Dynamic vs Static
 
