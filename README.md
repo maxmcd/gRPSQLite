@@ -1,12 +1,56 @@
 # gRPSQLite <!-- omit in toc -->
 
-gRPC + SQLite enabling you to easily build multitenant, metered, bottomless, infinite SQLite databases backed by anything you can dream of. Implement by making a gRPC server and using a pre-made VFS.
+**Turn any database into a SQLite backend via gRPC**
 
-Give every user, human or AI, as many SQLite databases as they want.
+gRPSQLite lets you build **multitenant, distributed SQLite databases** backed by any storage system you want. Give every user, human or AI, their own SQLite database.
 
-Uses real SQLite, so it works with everything that SQLite does (packages, extensions, apps, etc.)
+- **Real SQLite**: Works with all existing SQLite tools, extensions, and applications
+- **Atomic transactions**: Dramatically faster commits via batch writes
+- **Read replicas**: Unlimited read-only instances (if your backend supports point-in-time reads)
+- **Any language**: Implement your storage backend as a simple gRPC server
+- **Any storage**: File systems, cloud storage, databases, version control - anything
 
-_It's like FUSE for SQLite. Yes, the name is a pun._
+## Quick Start
+
+```bash
+# Terminal 1: Build and run container
+zsh static_dev.sh && docker run -it --rm --name grpsqlite sqlite-grpsqlite-static /bin/bash
+
+# Terminal 2: Start the memory server
+docker exec -it grpsqlite cargo run --example memory_server
+
+# Terminal 3: Use SQLite normally
+docker exec -it grpsqlite sqlite3_with_grpsqlite
+```
+
+In the SQLite terminal, run these commands to see it working:
+```sql
+.open main.db
+CREATE TABLE users(id, name);
+INSERT INTO users VALUES(1, 'Alice'), (2, 'Bob');
+SELECT * FROM users;
+-- You'll see: 1|Alice and 2|Bob
+
+-- Exit SQLite (Ctrl+C), then reconnect:
+-- docker exec -it grpsqlite sqlite3_with_grpsqlite
+
+.open main.db
+SELECT * FROM users;
+-- Data is still there! No local files - it's stored in the server!
+```
+
+## How It Works
+
+```
+┌─────────────┐    gRPC calls    ┌─────────────────┐    Your choice     ┌──────────────┐
+│   SQLite    │ ───────────────► │  gRPSQLite VFS  │ ─────────────────► │   Backend    │
+│     VFS     │                  │      Server     │                    │ (S3, FDB,    │
+│             │ ◄─────────────── │                 │ ◄───────────────── │  Postgres,   │
+└─────────────┘    SQLite API    └─────────────────┘    Database API    │  etc.)       │
+                                                                        └──────────────┘
+```
+
+gRPSQLite provides a **SQLite VFS (Virtual File System)** that converts SQLite's file operations into gRPC calls. You implement a simple gRPC server that handles reads, writes, and optionally atomic commits.
 
 > [!WARNING]
 > This is very early stage software.
@@ -17,13 +61,16 @@ _It's like FUSE for SQLite. Yes, the name is a pun._
 
 ## Table of Contents <!-- omit in toc -->
 
+- [Quick Start](#quick-start)
+- [How It Works](#how-it-works)
+- [Example Use Cases](#example-use-cases)
 - [Server Examples](#server-examples)
-  - [Example: In-memory server with atomic commits](#example-in-memory-server-with-atomic-commits)
+  - [Try it in 60 seconds (Docker)](#try-it-in-60-seconds-docker)
   - [Example: In-memory server with read-replica support](#example-in-memory-server-with-read-replica-support)
 - [SQLite VFS: Dynamic vs Static](#sqlite-vfs-dynamic-vs-static)
   - [Dynamic Loading](#dynamic-loading)
   - [Statically compiling](#statically-compiling)
-- [How it works](#how-it-works)
+- [Advanced Features](#advanced-features)
   - [Atomic batch commits](#atomic-batch-commits)
   - [Read-only Replicas](#read-only-replicas)
   - [Local Page Caching (TODO)](#local-page-caching-todo)
@@ -34,71 +81,45 @@ _It's like FUSE for SQLite. Yes, the name is a pun._
 - [Performance](#performance)
 - [Contributing](#contributing)
 
+## Example Use Cases
+
+- **Multi-tenant SaaS**: Each customer, or user, gets their own SQLite database. Works great for serverless functions.
+- **AI/Agent workflows**: Give each AI agent its own persistent database per-chat that users can roll back
+- **Immutable Database**: Store your database in an immutable store with full history, branching, and collaboration
+- **Read fanout**: Low-write, high read rate scenarios can be easily horizontally scaled
 
 ## Server Examples
 
-See the [`examples/`](examples/) directory for example server implementations.
+The fastest way to understand gRPSQLite is to try the examples. See the [`examples/`](examples/) directory for complete server implementations in Rust:
 
-At the time of writing, there are Rust server examples for:
-- [Memory server (atomic batched writes)](examples/memory_server.rs)
+- [Memory server (atomic batched writes)](examples/memory_server.rs) _- Start here!_
 - [Memory server (non-batched writes)](examples/memory_server_no_atomic.rs)
 - [Memory server (atomic + timestamped writes to support read replicas)](examples/versioned_memory_server.rs)
 
-And their associated `.sql` files.
+It's easy to implement in [any language that gRPC supports](https://grpc.io/docs/languages/).
 
-More examples will be added in the future, but you can see pretty quickly how you can use any language to implement a gRPC server,
-backed by your favorite database.
+### Try it in 60 seconds (Docker)
 
-### Example: In-memory server with atomic commits
-
-You need 3 terminals.
-
-In the first run (replace `zsh` with your shell as needed):
-
-```
+```bash
+# Terminal 1: Build and run
 zsh static_dev.sh && docker run -it --rm --name grpsqlite sqlite-grpsqlite-static /bin/bash
-```
 
-This will build the container and run it
-
-In the second, run:
-
-```
+# Terminal 2: Start memory server
 docker exec -it grpsqlite cargo run --example memory_server
-```
 
-This will start the memory server example that has verbose logging
-
-
-In the third terminal run:
-
-```
+# Terminal 3: Use SQLite normally
 docker exec -it grpsqlite sqlite3_with_grpsqlite
 ```
 
-Then you can run the following SQL:
-
-```
-.log stderr
+In the SQLite terminal:
+```sql
 .open main.db
-PRAGMA journal_mode=memory; -- 'delete' is the default
-CREATE TABLE t1(a, b);
-INSERT INTO t1 VALUES(1, 2);
-INSERT INTO t1 VALUES(3, 4);
-SELECT * FROM t1;
-
+CREATE TABLE users(id, name);
+INSERT INTO users VALUES(1, 'Alice'), (2, 'Bob');
+SELECT * FROM users;
 ```
 
-_You want to copy the newline to force execution of the last line_
-
-Then you can ctrl-c the third terminal, `docker exec` again, and see that the data is still there despite having no local files on disk:
-
-```
-.log stderr
-.open main.db
-SELECT * FROM t1;
-
-```
+Exit and reconnect - your data persists despite no local files! The data is stored via gRPC in the memory server.
 
 ### Example: In-memory server with read-replica support
 
@@ -119,7 +140,7 @@ There are 2 ways of using the SQLite VFS:
 1. Dynamically load the VFS
 2. Statically compile the VFS into a SQLite binary
 
-Statically compiling in is the smoothest experience, as it becomes the default VFS when you open a database file without having to load anything.
+Statically compiling in is the smoothest experience, as it becomes the default VFS when you open a database file without having to `.load` anything or use a custom setup package.
 
 ### Dynamic Loading
 
@@ -144,13 +165,13 @@ The process:
 
 See the [`static_dev.Dockerfile`](static_dev.Dockerfile) example which does all of these steps (you'll probably want to build with `--release` though).
 
-## How it works
+## Advanced Features
 
 The provided VFS converts SQLite VFS calls to gRPC calls so that you can effectively implement a SQLite VFS via gRPC.
 
-The provided VFS manages a lot of other features for you like atomic batch commits, stable read timestamp tracking, and more.
+It manages a lot of other features for you like atomic batch commits, stable read timestamp tracking, and more.
 
-Your gRPC server can then enable the various features based on the backing datastore you use.
+Your gRPC server can then enable the various features based on the backing datastore you use (see `GetCapabilities` RPC).
 
 For example, if you use a database like FoundationDB that supports both atomic transactions, as well as point-in-time reads, you get the benefits of wildly more efficient SQLite atomic commits (writes the whole transaction at once, rather than writing uncommitted rows to a journal), and support for read-only SQLite instances.
 
@@ -257,15 +278,11 @@ If you do not support atomic writes (e.g. backed by S3), then you will have to d
 
 ## Performance
 
-Performance can be either worse, or better, than a traditional SQLite-on-EBS setup:
+While the network adds some overhead, gRPSQLite makes up expected dramatic performance differences through atomic batch commits and read replicas.
 
-1. Read-write transactions can happen a lot faster because it can do atomic batched writes
-2. Reads can be slower if the gRPC + DB latency is higher than an EBS block read
-3. Read-only replica performance can be infinitely replicated if the backend supports it!
+Atomic batch commits mean that you only send a single write operation to the gRPC server, which is likely using a backing DB that does all transaction writes at once (FDB, DynamoDB).
 
-A good rule of thumb is:
-1. Small transactions will be slower
-2. Larger read-write transactions can be faster
+Additionally, if using a DB that supports read replicas, you can scale reads out for additional machines aggressively, especially when combined with tiered caches.
 
 ## Contributing
 
