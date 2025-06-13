@@ -210,6 +210,8 @@ The way this works is when you first submit a read for a transaction, the respon
 - Most filesystems
 - SQLite
 
+You can see an example using the SQL [`examples/versioned_memory_server_test.sql`](examples/versioned_memory_server_test.sql) and the server [`examples/versioned_memory_server.rs`](examples/versioned_memory_server.rs) of a RW instance making updates, and a non-blocking RO reading the data.
+
 ### Local Page Caching ([TODO](https://github.com/danthegoodman1/gRPSQLite/issues/3))
 
 For the leased instance, you can configure the VFS to locally-cache pages. This means that reads for pages that haven't changed since the last time the VFS saw it are faster.
