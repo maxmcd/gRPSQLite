@@ -159,13 +159,13 @@ If your server implementation supports atomic batch commits (basically any DB th
 
 By default, SQLite (in wal/wal2 mode) will write uncommitted rows to the WAL file, and rely on a commit frame to determine whether the transaction actually committed.
 
-When the server supports atomic batch commits, the SQLite VFS will instead memory-buffer writes, and on commit send a single batched write to the server (`AtomicWriteBatch`). As you can guess now, this is _a lot faster_.
+When the server supports atomic batch commits, the SQLite VFS will instead memory-buffer writes, and on commit send a single batched write to the server (`AtomicWriteBatch`). As you can guess, this is _a lot faster_.
 
 If your server supports this, clients should always use `PRAGMA journal_mode=memory` (which should be the default). If it doesn't, then clients should set `PRAGMA locking_mode=exclusive` and `PRAGMA journal_mode=wal` (or `wal2`).
 
-`journal_mode=memory` is ideal:
+Why `journal_mode=memory` is ideal:
 
-1. We don't need a WAL anymore, because we atomically commit the whole transaction (your backing store likely has its own WAL)
+1. We don't need a WAL anymore, so reads only have to hit the main database "file"
 2. Because there are no WAL writes, there is no WAL checkpointing, meaning we never have to double-write committed transactions
 3. Your gRPC server implementation can expect only a single database file, and reject bad clients using the wrong journal mode (if the file doesn't match the file that created the lease)
 
