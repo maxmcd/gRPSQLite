@@ -213,14 +213,14 @@ _Because the first page of the DB is accessed so aggressively, it's always cache
 
 ## Tips for Writing a gRPC server
 
-An over-simplification is you are effectively writing a remote block device.
+An over-simplification: You are effectively writing a remote block device.
 
 ### Handling page sizes and row keys
 
-Because SQLite uses stable page sizes (and predictable database/wal headers), you can key by the `% page_size` (sometimes called `sector_size`) interval.
+Because SQLite uses stable page sizes (and predictable database/wal headers), you can key by the `offset % page_size` (sometimes called `sector_size`) interval. SQLite should always
+perform writes on the `page_size` interval already, but it's a good idea to verify on write to prevent malicious clients from corrupting the DB.
 
-This VFS has `SQLITE_IOCAP_SUBPAGE_READ` (which would allow it to read at non-page offsets).
-
+This VFS has `SQLITE_IOCAP_SUBPAGE_READ` disabled, which would otherwise allow reads to occur at non-offset intervals.
 However, it will still often read at special offsets and lengths for the database header. The following is an example of what operations are valled on the main db file when it is first opened:
 
 ```
@@ -231,9 +231,7 @@ read            file=main.db offset=24 length=16
 get_file_size   file=main.db
 ```
 
-The simplest way to handle this is when ever you get an offset for a read, use the key `offset % page_size`. You should still return the data at the expected offset and length to the gRPC call.
-
-Writes will always be on `page_size` intervals, so you only need to do this trick for reads. Writes can just use the offset as the primary key, and will always contain `page_size` length data.
+The simplest way to handle this is when ever you get an offset for a read, use the key `(offset % page_size) * page_size`. You should still return the data at the expected offset and length to the gRPC call.
 
 ### Reads for missing data
 
