@@ -155,13 +155,13 @@ This supports a single read-write instance per database, and if your backing sto
 
 ### Atomic batch commits
 
-If your server supports atomic batch commits (basically any DB that can do a transaction), this results in _wildly_ faster SQLite transactions.
+If your server implementation supports atomic batch commits (basically any DB that can do a transaction), this results in _wildly_ faster SQLite transactions.
 
 By default, SQLite (in wal/wal2 mode) will write uncommitted rows to the WAL file, and rely on a commit frame to determine whether the transaction actually committed.
 
 When the server supports atomic batch commits, the SQLite VFS will instead memory-buffer writes, and on commit send a single batched write to the server (`AtomicWriteBatch`). As you can guess now, this is _a lot faster_.
 
-If your server supports this, clients should always use `PRAGME journal_mode=memory` (which should be the default). If you don't, then they should set `pragma locking_mode=exclusive` and `pragma journal_mode=wal` (or `wal2`).
+If your server supports this, clients should always use `PRAGMA journal_mode=memory` (which should be the default). If it doesn't, then clients should set `PRAGMA locking_mode=exclusive` and `PRAGMA journal_mode=wal` (or `wal2`).
 
 `journal_mode=memory` is ideal:
 
