@@ -209,7 +209,7 @@ How it works:
 
 Depending on how you store data, this can dramatically speed up reads.
 
-[Because the first page of the DB is accessed so aggressively, it's always cached in memory.](https://github.com/danthegoodman1/gRPSQLite/issues/5)
+_Because the first page of the DB is accessed so aggressively, it's always cached in memory on the RW instance.__
 
 ## Tips for Writing a gRPC server
 
