@@ -195,16 +195,16 @@ The way this works is when you first submit a read for a transaction, the respon
 - Most filesystems
 - SQLite
 
-You can see an example using the SQL [`examples/versioned_memory_server_test.sql`](examples/versioned_memory_server_test.sql) and the server [`examples/versioned_memory_server.rs`](examples/versioned_memory_server.rs) of a RW instance making updates, and a non-blocking RO reading the data.
+You can see an example using the SQL [`examples/versioned_memory_server_test.sql`](examples/versioned_memory_server_test.sql) and the server [`examples/versioned_memory_server.rs`](examples/versioned_memory_server.rs) of a RW instance making updates, and a non-blocking RO reading the data. This example uses an copy-on-write `Vec<u8>`, with versions timestamped every write.
 
 ### Local Page Caching ([TODO](https://github.com/danthegoodman1/gRPSQLite/issues/3))
 
-For the leased instance, you can configure the VFS to locally-cache pages. This means that reads for pages that haven't changed since the last time the VFS saw it are faster.
+You can enable local page caching, enabling reads for pages that haven't changed since the last time the VFS saw to be faster.
 
-This is implemented by:
+How it works:
 1. When the VFS writes, it includes the checksum of the data, which you should store
 2. When the VFS reads, it includes the checksum that it has locally
-3. If the checksum matches what you have at the server you can respond with a blank data array, which tells the VFS to read the data locally
+3. If the checksum matches what you have at the server you can respond with a blank data array, which tells the VFS to read the local copy
 4. The VFS will read the page into memory, verify the checksum, and return it to SQLite
 
 Depending on how you store data, this can dramatically speed up reads.
