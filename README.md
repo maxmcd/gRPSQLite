@@ -186,7 +186,7 @@ The way this works is when you first submit a read for a transaction, the respon
 - [Git repos...](https://github.com/danthegoodman1/gRPSQLite/issues/8)
 
 
-**Some databases that CANNOT support read-only replicas (at least in isolation):**
+**Some databases that CANNOT support read-only replicas (at least independently):**
 
 - Postgres
 - MySQL
@@ -194,6 +194,8 @@ The way this works is when you first submit a read for a transaction, the respon
 - S3
 - Most filesystems
 - SQLite
+
+For filesystems like S3, you could use a dedicated metadata DB for managing pages, effectively separating data and metadata. This is a preferred method for larger page sizes.
 
 You can see an example using the SQL [`examples/versioned_memory_server_test.sql`](examples/versioned_memory_server_test.sql) and the server [`examples/versioned_memory_server.rs`](examples/versioned_memory_server.rs) of a RW instance making updates, and a non-blocking RO reading the data. This example uses an copy-on-write `Vec<u8>`, with versions timestamped every write.
 
