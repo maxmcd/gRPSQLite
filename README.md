@@ -209,12 +209,6 @@ How it works:
 
 Depending on how you store data, this can dramatically speed up reads.
 
-By default, SQLite doesn't do page checksums 😵‍💫
-
-Luckily, your backing DB probably does.
-
-Local page caching tracks checksums in memory, verifying page content when reading from disk.
-
 [Because the first page of the DB is accessed so aggressively, it's always cached in memory.](https://github.com/danthegoodman1/gRPSQLite/issues/5)
 
 ## Tips for Writing a gRPC server
