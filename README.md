@@ -65,7 +65,6 @@ gRPSQLite provides a **SQLite VFS (Virtual File System)** that converts SQLite's
 - [How It Works](#how-it-works)
 - [Example Use Cases](#example-use-cases)
 - [Server Examples](#server-examples)
-  - [Try it in 60 seconds (Docker)](#try-it-in-60-seconds-docker)
   - [Example: In-memory server with read-replica support](#example-in-memory-server-with-read-replica-support)
 - [SQLite VFS: Dynamic vs Static](#sqlite-vfs-dynamic-vs-static)
   - [Dynamic Loading](#dynamic-loading)
@@ -98,40 +97,17 @@ The fastest way to understand gRPSQLite is to try the examples. See the [`exampl
 
 It's easy to implement in [any language that gRPC supports](https://grpc.io/docs/languages/).
 
-### Try it in 60 seconds (Docker)
-
-```bash
-# Terminal 1: Build and run
-zsh static_dev.sh && docker run -it --rm --name grpsqlite sqlite-grpsqlite-static /bin/bash
-
-# Terminal 2: Start memory server
-docker exec -it grpsqlite cargo run --example memory_server
-
-# Terminal 3: Use SQLite normally
-docker exec -it grpsqlite sqlite3_with_grpsqlite
-```
-
-In the SQLite terminal:
-```sql
-.open main.db
-CREATE TABLE users(id, name);
-INSERT INTO users VALUES(1, 'Alice'), (2, 'Bob');
-SELECT * FROM users;
-```
-
-Exit and reconnect - your data persists despite no local files! The data is stored via gRPC in the memory server.
-
 ### Example: In-memory server with read-replica support
 
 See [`examples/versioned_memory_server_test.sql`](examples/versioned_memory_server_test.sql) and the server [`examples/versioned_memory_server.rs`](examples/versioned_memory_server.rs)
 
-Like the above, but you'll want to change the server command to:
+Modify the quickstart second terminal command to:
 
 ```
 docker exec -it grpsqlite cargo run --example versioned_memory_server
 ```
 
-As well as running 2 SQLite clients as indicated in the `.sql` file (one RW, one RO).
+As well as running 2 SQLite clients as indicated in the above linked `.sql` file (one RW, one RO).
 
 ## SQLite VFS: Dynamic vs Static
 
