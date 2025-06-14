@@ -63,4 +63,4 @@ RUN cd /tmp && \
     cp sqlite3_with_grpsqlite /usr/local/bin/ && \
     rm -rf /tmp/*
 
-CMD ["/bin/bash", "-c", "cat examples/simple_test.sql | sqlite3_with_grpsqlite"]
+CMD ["/bin/bash"]
