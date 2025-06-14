@@ -173,7 +173,7 @@ Why `journal_mode=memory` is ideal:
 
 If your database supports point-in-time reads (letting you control the precise point in time of the transaction), then you can support read-only SQLite replicas. Without stable timestamps for reads, a read replica might see an inconsistent database state that will cause SQLite to think the database has been corrupted.
 
-The way this works is when you first submit a read for a transaction, the response will return a stable timestamp that the SQLite VFS will remember for the duration of the transaction (until atomic rollback or xUnlock is called). Subsequent reads from the same transaction will provide this timestamp, which your DB should use to ensure that the transaction sees a stable timestamp of the database.
+The way this works is when you first submit a read for a transaction, the response will return a stable timestamp that the SQLite VFS will remember for the duration of the transaction (until atomic rollback or xUnlock is called). Subsequent reads from the same transaction will provide this timestamp to the gRPC server, which you must use to ensure that the transaction sees a stable timestamp of the database.
 
 **To start a read-only replica instance, simply open the DB in read-only mode.** The VFS will verify with the capabilities of the gRPC server implementation that it can support read-only replicas (if not, it will error on open with `SQLITE_CANTOPEN`), and will not attempt to acquire a lease on open.
 
@@ -181,8 +181,8 @@ The way this works is when you first submit a read for a transaction, the respon
 
 - FoundationDB
 - CockroachDB (via `AS OF SYSTEM TIME`)
-- RocksDB
-- Badger
+- RocksDB (with [User-defined Timestamps](https://github.com/facebook/rocksdb/wiki/User-defined-Timestamp))
+- [BadgerDB](https://github.com/hypermodeinc/badger)
 - [Git repos...](https://github.com/danthegoodman1/gRPSQLite/issues/8)
 
 
