@@ -6,6 +6,7 @@ gRPSQLite lets you build **multitenant, distributed SQLite databases** backed by
 
 - **Real SQLite**: Works with all existing SQLite tools, extensions, and applications
 - **Any storage**: File systems, cloud storage, databases, version control - store SQLite pages anywhere
+- **Instantly available**: Mount TB-scale SQLite databases in milliseconds
 - **Atomic transactions**: Dramatically faster commits via batch writes
 - **Read replicas**: Unlimited read-only instances (if your backend supports point-in-time reads)
 - **Any language**: Implement your storage backend as a simple gRPC server
