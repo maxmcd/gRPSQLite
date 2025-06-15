@@ -1,6 +1,6 @@
 # gRPSQLite <!-- omit in toc -->
 
-**Turn any datastore into a SQLite backend via gRPC**
+**A SQLite VFS for remote SQLite databases via gRPC. Turn any datastore into a SQLite backend!**
 
 gRPSQLite lets you build **multitenant, distributed SQLite databases** backed by any storage system you want. Give every user, human or AI, their own SQLite database.
 
