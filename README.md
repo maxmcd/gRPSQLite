@@ -184,6 +184,7 @@ The way this works is when you first submit a read for a transaction, the respon
 - CockroachDB (via `AS OF SYSTEM TIME`)
 - RocksDB (with [User-defined Timestamps](https://github.com/facebook/rocksdb/wiki/User-defined-Timestamp))
 - [BadgerDB](https://github.com/hypermodeinc/badger)
+- S3 with a custom WAL layer
 - [Git repos...](https://github.com/danthegoodman1/gRPSQLite/issues/8)
 
 
@@ -192,7 +193,7 @@ The way this works is when you first submit a read for a transaction, the respon
 - Postgres
 - MySQL
 - Redis
-- S3 ([with modifications, yes](https://lobste.rs/s/hhhvbw/sqlite_vfs_for_remote_databases_via_grpc#c_bdxkyj))
+- S3 as "file per page"
 - Most filesystems
 - SQLite
 
