@@ -192,7 +192,7 @@ The way this works is when you first submit a read for a transaction, the respon
 - Postgres
 - MySQL
 - Redis
-- S3
+- S3 ([with modifications, yes](https://lobste.rs/s/hhhvbw/sqlite_vfs_for_remote_databases_via_grpc#c_bdxkyj))
 - Most filesystems
 - SQLite
 
