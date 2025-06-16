@@ -187,7 +187,7 @@ The way this works is when you first submit a read for a transaction, the respon
 - S3 with a WAL layer [^1]
 - [Git repos...](https://github.com/danthegoodman1/gRPSQLite/issues/8)
 
-[^1]: S3 requires a WAL indirection on top since it doesn't support reading previous object versions. You can use conditional writes as a "weak" leasing layer (doesn't transactionally guarantee when writing pages), and write to a WAL that points page references to S3 files. Then, at query time, you read the WAL to find the real page file. This is how a previous project of mine [icedb](https://github.com/danthegoodman1/icedb) worked!
+[^1]: S3 requires a WAL indirection on top since it doesn't support reading previous object versions. You can use conditional writes as a "weak" leasing layer (doesn't transactionally guarantee when writing pages), and write to a WAL that points page references to S3 files. Then, at query time, you read the WAL to find the real page file. This is how a previous project of mine [icedb](https://github.com/danthegoodman1/icedb) worked! However you'll still need compaction. You could also use [slatedb](https://slatedb.io/) but the performance will likely be lower than a custom WAL layer.
 
 **Some databases that CANNOT support read-only replicas (at least independently):**
 
