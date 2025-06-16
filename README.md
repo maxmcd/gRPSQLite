@@ -198,7 +198,7 @@ The way this works is when you first submit a read for a transaction, the respon
 - Most filesystems
 - SQLite
 
-For filesystems like S3, you could use a dedicated metadata DB for managing pages, effectively separating data and metadata. This is a preferred method for larger page sizes.
+For filesystems like S3, you could use a dedicated metadata DB for managing pages, effectively separating data and metadata. Separating metadata and page can be great for larger page sizes.
 
 You can see an example using the SQL [`examples/versioned_memory_server_test.sql`](examples/versioned_memory_server_test.sql) and the server [`examples/versioned_memory_server.rs`](examples/versioned_memory_server.rs) of a RW instance making updates, and a non-blocking RO reading the data. This example uses an copy-on-write `Vec<u8>`, with versions timestamped every write.
 
