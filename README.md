@@ -4,7 +4,7 @@
 
 gRPSQLite lets you build **multitenant, distributed SQLite databases** backed by any storage system you want. Give every user, human or AI, their own SQLite database.
 
-- **Real SQLite**: Works with all existing SQLite tools, extensions, and applications
+- **Real SQLite**: Works with existing SQLite tools, extensions, and applications
 - **Any storage**: File systems, cloud storage, databases, version control - store SQLite pages anywhere
 - **Instantly available**: Mount TB-scale SQLite databases in milliseconds
 - **Atomic transactions**: Dramatically faster commits via batch writes
@@ -184,9 +184,10 @@ The way this works is when you first submit a read for a transaction, the respon
 - CockroachDB (via `AS OF SYSTEM TIME`)
 - RocksDB (with [User-defined Timestamps](https://github.com/facebook/rocksdb/wiki/User-defined-Timestamp))
 - [BadgerDB](https://github.com/hypermodeinc/badger)
-- S3 with a custom WAL layer
+- S3 with a WAL layer [^1]
 - [Git repos...](https://github.com/danthegoodman1/gRPSQLite/issues/8)
 
+[^1]: S3 requires a WAL indirection on top since it doesn't support reading previous object versions. You can use conditional writes as a "weak" leasing layer (doesn't transactionally guarantee when writing pages), and write to a WAL that points page references to S3 files. Then, at query time, you read the WAL to find the real page file. This is how a previous project of mine [icedb](https://github.com/danthegoodman1/icedb) worked!
 
 **Some databases that CANNOT support read-only replicas (at least independently):**
 
