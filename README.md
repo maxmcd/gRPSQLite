@@ -43,15 +43,15 @@ SELECT * FROM users;
 ## How It Works
 
 ```
-┌─────────────┐    gRPC calls    ┌─────────────────┐    Your choice     ┌──────────────┐
+┌─────────────┐                  ┌─────────────────┐                    ┌──────────────┐
 │   SQLite    │ ───────────────► │  gRPSQLite VFS  │ ─────────────────► │   Backend    │
-│     VFS     │                  │      Server     │                    │ (S3, FDB,    │
+│     VFS     │    gRPC calls    │      Server     │    Your backend    │ (S3, FDB,    │
 │             │ ◄─────────────── │                 │ ◄───────────────── │  Postgres,   │
-└─────────────┘    SQLite API    └─────────────────┘    Database API    │  etc.)       │
+└─────────────┘                  └─────────────────┘                    │  etc.)       │
                                                                         └──────────────┘
 ```
 
-gRPSQLite provides a **SQLite VFS (Virtual File System)** that converts SQLite's file operations into gRPC calls. You implement a simple gRPC server that handles reads, writes, and optionally atomic commits.
+gRPSQLite provides a **SQLite VFS (Virtual File System)** that converts SQLite's file operations into gRPC calls. You implement a simple gRPC server that handles the operations against your backend.
 
 > [!WARNING]
 > This is very early stage software.
