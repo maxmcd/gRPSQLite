@@ -1,4 +1,5 @@
 use std::ffi::{CStr, c_char, c_int, c_void};
+use std::path::Path;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -31,6 +32,7 @@ struct GrpcVfs {
     current_read_timestamp: Arc<Mutex<Option<i64>>>,
     heartbeat_shutdown_tx: Arc<Mutex<Option<tokio::sync::oneshot::Sender<()>>>>,
     first_page_cache: Arc<Mutex<Vec<u8>>>,
+    database: Arc<Mutex<String>>,
 }
 
 impl GrpcVfs {
@@ -69,7 +71,6 @@ impl GrpcVfs {
             let req = GetCapabilitiesRequest {
                 client_token: std::env::var("GRPC_VFS_CLIENT_TOKEN")
                     .unwrap_or_else(|_| "".to_string()),
-                file_name: "".to_string(), // not relevant
                 readonly: false,
             };
 
@@ -99,6 +100,7 @@ impl GrpcVfs {
             current_read_timestamp: Arc::new(Mutex::new(None)),
             heartbeat_shutdown_tx: Arc::new(Mutex::new(None)),
             first_page_cache: Arc::new(Mutex::new(vec![])),
+            database: Arc::new(Mutex::new(String::new())),
         }
     }
 
@@ -250,12 +252,22 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
             return Err(sqlite_plugin::vars::SQLITE_CANTOPEN);
         }
 
+        if opts.kind() == sqlite_plugin::flags::OpenKind::MainDb {
+            let database_name = path
+                .and_then(|p| Path::new(p).file_name())
+                .and_then(|name| name.to_str())
+                .unwrap_or("")
+                .to_string();
+            log::debug!("database name: {}", database_name);
+            *self.database.lock() = database_name;
+        }
+
         // acquire a lease if we are RW
         if !mode.is_readonly() && opts.kind() == sqlite_plugin::flags::OpenKind::MainDb {
             let lease_result = self.runtime.block_on(async {
                 let req = AcquireLeaseRequest {
                     context: self.context.clone(),
-                    database: path.unwrap_or("").to_string(),
+                    database: self.database.lock().clone(),
                 };
 
                 log::debug!("acquiring lease for main db {}", path.unwrap_or(""));
@@ -301,6 +313,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
         self.runtime.block_on(async {
             let req = DeleteRequest {
                 context: self.context.clone(),
+                database: self.database.lock().clone(),
                 lease_id: self.lease.lock().clone().unwrap_or("".to_string()),
                 file_name: path.to_string(),
             };
@@ -338,6 +351,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
         self.runtime.block_on(async {
             let req = GetFileSizeRequest {
                 context: self.context.clone(),
+                database: self.database.lock().clone(),
                 lease_id: self.lease.lock().clone().unwrap_or("".to_string()),
                 file_name: handle.file_path.clone(),
             };
@@ -369,6 +383,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
         let result = self.runtime.block_on(async {
             let req = TruncateRequest {
                 context: self.context.clone(),
+                database: self.database.lock().clone(),
                 lease_id: self.lease.lock().clone().unwrap_or("".to_string()),
                 file_name: handle.file_path.clone(),
                 size: size as i64,
@@ -449,6 +464,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                 file_name: handle.file_path.clone(),
                 offset: offset as i64,
                 checksum: xxh3_64(data),
+                database: self.database.lock().clone(),
             };
 
             let start = Instant::now();
@@ -517,6 +533,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                         length: self.capabilities.sector_size as i64,
                         time_millis: current_timestamp,
                         checksum: 0, // Empty checksum for now
+                        database: self.database.lock().clone(),
                     };
 
                     let start = Instant::now();
@@ -581,6 +598,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                 length: data.len() as i64,
                 time_millis: current_timestamp,
                 checksum: 0, // Empty checksum for now
+                database: self.database.lock().clone(),
             };
 
             let start = Instant::now();
@@ -683,6 +701,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                 file_name: handle.file_path.clone(),
                 pragma_name: pragma.name.to_string(),
                 pragma_value: pragma.arg.unwrap_or("").to_string(),
+                database: self.database.lock().clone(),
             };
 
             let start = Instant::now();
@@ -746,6 +765,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                         lease_id: self.lease.lock().clone().unwrap_or("".to_string()),
                         file_name: handle.file_path.clone(),
                         writes: batch,
+                        database: self.database.lock().clone(),
                     };
 
                     let start = Instant::now();

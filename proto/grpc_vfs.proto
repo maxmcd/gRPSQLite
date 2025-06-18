@@ -67,13 +67,9 @@ message GetCapabilitiesRequest {
   // the GRPSQLITE_CLIENT_TOKEN environment variable.
   string client_token = 1;
 
-  // The file_name is the name of the database file, or the -wal or -wal2 file.
-  // For a pure sector_size request, this will be blank.
-  string file_name = 2;
-
   // If the client is read only. If the server does not support point-in-time
   // reads, then this client will not be usable.
-  bool readonly = 3;
+  bool readonly = 2;
 }
 
 message GetCapabilitiesResponse {
@@ -121,7 +117,8 @@ message ReadRequest {
   string lease_id = 2;
   // This will be the name of the database file, or the -wal or -wal2 file
   string file_name = 3;
-  int64 offset = 4;
+  string database = 4;
+  int64 offset = 5;
   int64 length = 6;
 
   // The point in time in unix milliseconds to read from if the server supports
@@ -160,7 +157,8 @@ message WriteRequest {
   string lease_id = 2;
   // This will be the name of the database file, or the -wal or -wal2 file
   string file_name = 3;
-  int64 offset = 4;
+  string database = 4;
+  int64 offset = 5;
   bytes data = 6;
 
   // The xxhash64 checksum of the data.
@@ -181,7 +179,8 @@ message AtomicWriteBatchRequest {
   string context = 1;
   string lease_id = 2;
   string file_name = 3;
-  repeated AtomicWrite writes = 4;
+  string database = 4;
+  repeated AtomicWrite writes = 5;
 }
 
 message GetFileSizeRequest {
@@ -189,6 +188,7 @@ message GetFileSizeRequest {
   string lease_id = 2;
   // This will be the name of the database file, or the -wal or -wal2 file
   string file_name = 3;
+  string database = 4;
 }
 
 message GetFileSizeResponse { int64 size = 1; }
@@ -199,8 +199,9 @@ message PragmaRequest {
   // This will be the name of the database file, or the -wal or -wal2 file (if
   // the pragma is for the wal or wal2 file)
   string file_name = 3;
-  string pragma_name = 4;
-  string pragma_value = 5;
+  string database = 4;
+  string pragma_name = 5;
+  string pragma_value = 6;
 }
 
 message PragmaResponse { string response = 1; }
@@ -210,6 +211,7 @@ message TruncateRequest {
   string lease_id = 2;
   // This will be the name of the database file, or the -wal or -wal2 file
   string file_name = 3;
+  string database = 4;
   int64 size = 5;
 }
 
@@ -218,4 +220,5 @@ message DeleteRequest {
   string lease_id = 2;
   // This will be the name of the database file, or the -wal or -wal2 file
   string file_name = 3;
+  string database = 4;
 }
