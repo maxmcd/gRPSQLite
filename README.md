@@ -222,7 +222,7 @@ An over-simplification: You are effectively writing a remote block device.
 
 ### Handling page sizes and row keys
 
-Because SQLite uses stable page sizes (and predictable database/wal headers), you can key by the (integer division) `offset / page_size` (sometimes called `sector_size`) interval. SQLite should always
+Because SQLite uses stable page sizes (and predictable database/wal headers), you can key by the (integer division) `offset / page_size` (`page_size` sometimes called `sector_size` internally to SQLite) interval. SQLite should always
 perform writes on the `page_size` interval already, but it's a good idea to verify on write to prevent malicious clients from corrupting the DB.
 
 This VFS has `SQLITE_IOCAP_SUBPAGE_READ` disabled, which would otherwise allow reads to occur at non-offset intervals.
