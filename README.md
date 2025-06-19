@@ -238,7 +238,7 @@ get_file_size   file=main.db
 
 It does reads both at sub-page lengths, as well as non-page_size offsets.
 
-The simplest way to handle this is when ever you get an offset for a read, use the key `(offset % page_size) * page_size`. You should still return the data at the expected offset and length to the gRPC call (e.g. convert `offset=24 length=16` to `key=0` and return the `[24:24+16]` bytes)
+The simplest way to handle this is when ever you get an offset for a read, use the key (integer division) `(offset / page_size) * page_size`. You should still return the data at the expected offset and length to the gRPC call (e.g. convert `offset=24 length=16` to `key=0` and return the `[24:24+16]` bytes)
 
 ### Reads for missing data
 
