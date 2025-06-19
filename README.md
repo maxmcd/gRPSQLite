@@ -226,7 +226,7 @@ Because SQLite uses stable page sizes (and predictable database/wal headers), yo
 perform writes on the `page_size` interval already, but it's a good idea to verify on write to prevent malicious clients from corrupting the DB.
 
 This VFS has `SQLITE_IOCAP_SUBPAGE_READ` disabled, which would otherwise allow reads to occur at non-offset intervals.
-However, it will still often read at special offsets and lengths for the database header. The following is an example of what operations are valled on the main db file when it is first opened:
+However, it will still often read at special offsets and lengths for the database header. The following is an example of what operations are called on the main db file when it is first opened:
 
 ```
 read            file=main.db offset=0 length=100
@@ -236,7 +236,9 @@ read            file=main.db offset=24 length=16
 get_file_size   file=main.db
 ```
 
-The simplest way to handle this is when ever you get an offset for a read, use the key `(offset % page_size) * page_size`. You should still return the data at the expected offset and length to the gRPC call.
+It does reads both at sub-page lengths, as well as non-page_size offsets.
+
+The simplest way to handle this is when ever you get an offset for a read, use the key `(offset % page_size) * page_size`. You should still return the data at the expected offset and length to the gRPC call (e.g. convert `offset=24 length=16` to `key=0` and return the `[24:24+16]` bytes)
 
 ### Reads for missing data
 
