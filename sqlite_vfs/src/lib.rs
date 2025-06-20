@@ -310,7 +310,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
         log::debug!("delete: path={}", path);
 
         // Delete over the server
-        self.runtime.block_on(async {
+        let result = self.runtime.block_on(async {
             let req = DeleteRequest {
                 context: self.context.clone(),
                 database: self.database.lock().clone(),
@@ -323,18 +323,25 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                 Ok(response) => {
                     log::debug!("delete completed in {:?}", start.elapsed());
                     log::debug!("delete successful: {:?}", response.into_inner());
+                    Ok(())
                 }
                 Err(status) => {
                     log::debug!("delete errored in {:?}", start.elapsed());
                     log::error!("delete failed: {:?}", status);
+                    Err(sqlite_plugin::vars::SQLITE_IOERR_DELETE)
                 }
             }
         });
 
-        // Delete locally
-        let mut files = self.files.lock();
-        files.retain(|f| f.file_path != path);
-        Ok(())
+        match result {
+            Ok(_) => {
+                // Delete locally only if server delete succeeded
+                let mut files = self.files.lock();
+                files.retain(|f| f.file_path != path);
+                Ok(())
+            }
+            Err(err) => Err(err),
+        }
     }
 
     fn access(
@@ -637,7 +644,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
         log::debug!("close: path={}", handle.file_path);
 
         // Close rpc
-        self.runtime.block_on(async {
+        let result = self.runtime.block_on(async {
             let req = CloseRequest {
                 context: self.context.clone(),
                 lease_id: self.lease.lock().clone().unwrap_or("".to_string()),
@@ -649,27 +656,35 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                 Ok(response) => {
                     log::debug!("close completed in {:?}", start.elapsed());
                     log::debug!("close successful: {:?}", response.into_inner());
+                    Ok(())
                 }
                 Err(status) => {
                     log::debug!("close errored in {:?}", start.elapsed());
                     log::error!("close failed: {:?}", status);
+                    Err(sqlite_plugin::vars::SQLITE_IOERR_CLOSE)
                 }
             }
         });
 
-        let mut files = self.files.lock();
-        files.retain(|f| f.file_path != handle.file_path);
+        match result {
+            Ok(_) => {
+                // Clean up locally only if server close succeeded
+                let mut files = self.files.lock();
+                files.retain(|f| f.file_path != handle.file_path);
 
-        // If we have a lease and this looks like the main database file (not -wal or -wal2),
-        // signal the heartbeat thread to shutdown
-        if self.lease.lock().is_some() && handle.is_main_db {
-            log::debug!("signaling heartbeat thread to shutdown for main database close");
-            if let Some(shutdown_tx) = self.heartbeat_shutdown_tx.lock().take() {
-                let _ = shutdown_tx.send(()); // Ignore if receiver is already dropped
+                // If we have a lease and this looks like the main database file (not -wal or -wal2),
+                // signal the heartbeat thread to shutdown
+                if self.lease.lock().is_some() && handle.is_main_db {
+                    log::debug!("signaling heartbeat thread to shutdown for main database close");
+                    if let Some(shutdown_tx) = self.heartbeat_shutdown_tx.lock().take() {
+                        let _ = shutdown_tx.send(()); // Ignore if receiver is already dropped
+                    }
+                }
+
+                Ok(())
             }
+            Err(err) => Err(err),
         }
-
-        Ok(())
     }
 
     fn device_characteristics(&self) -> i32 {
