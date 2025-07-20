@@ -73,7 +73,7 @@ gRPSQLite provides a **SQLite VFS (Virtual File System)** that converts SQLite's
 - [Advanced Features](#advanced-features)
   - [Atomic batch commits](#atomic-batch-commits)
   - [Read-only Replicas](#read-only-replicas)
-  - [Local Page Caching (TODO)](#local-page-caching-todo)
+  - [Local Page Caching](#local-page-caching)
 - [Tips for Writing a gRPC server](#tips-for-writing-a-grpc-server)
   - [Handling page sizes and row keys](#handling-page-sizes-and-row-keys)
   - [Reads for missing data](#reads-for-missing-data)
@@ -202,7 +202,9 @@ For filesystems like S3, you could use a dedicated metadata DB for managing page
 
 You can see an example using the SQL [`examples/versioned_memory_server_test.sql`](examples/versioned_memory_server_test.sql) and the server [`examples/versioned_memory_server.rs`](examples/versioned_memory_server.rs) of a RW instance making updates, and a non-blocking RO reading the data. This example uses an copy-on-write `Vec<u8>`, with versions timestamped every write.
 
-### Local Page Caching ([TODO](https://github.com/danthegoodman1/gRPSQLite/issues/3))
+### Local Page Caching
+
+See configuration in [`env_config.rs`](./sqlite_vfs/src/env_config.rs).
 
 You can enable local page caching, enabling reads for pages that haven't changed since the last time the VFS saw to be faster.
 
@@ -215,6 +217,8 @@ How it works:
 Depending on how you store data, this can dramatically speed up reads.
 
 _Because the first page of the DB is accessed so aggressively, it's always cached in memory on the RW instance._
+
+You may also configure "blind local reads", which will forces reads to run fully locally if the data is cached. This choose performance at the expense of not guaranteeing a held lease, and possibly reading stale data.
 
 ## Tips for Writing a gRPC server
 

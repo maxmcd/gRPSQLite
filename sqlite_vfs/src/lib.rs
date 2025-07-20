@@ -11,6 +11,7 @@ use xxhash_rust::xxh3::xxh3_64;
 
 tonic::include_proto!("grpc_vfs");
 
+mod env_config;
 mod handle;
 
 struct Capabilities {
@@ -33,26 +34,27 @@ struct GrpcVfs {
     heartbeat_shutdown_tx: Arc<Mutex<Option<tokio::sync::oneshot::Sender<()>>>>,
     first_page_cache: Arc<Mutex<Vec<u8>>>,
     database: Arc<Mutex<String>>,
+    env_config: env_config::EnvConfig,
 }
 
 impl GrpcVfs {
-    async fn create_grpc_client() -> Result<
+    async fn create_grpc_client(
+        config: &env_config::EnvConfig,
+    ) -> Result<
         grpsqlite_client::GrpsqliteClient<tonic::transport::Channel>,
         Box<dyn std::error::Error + Send + Sync>,
     > {
-        let url =
-            std::env::var("GRPC_VFS_URL").unwrap_or_else(|_| "http://localhost:50051".to_string());
-
-        let connect_timeout_secs = std::env::var("GRPC_VFS_CONNECT_TIMEOUT_SECS")
-            .ok()
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(10);
-
-        let endpoint = tonic::transport::Endpoint::from_shared(url)?
-            .connect_timeout(std::time::Duration::from_secs(connect_timeout_secs))
-            .keep_alive_timeout(std::time::Duration::from_secs(connect_timeout_secs))
+        let endpoint = tonic::transport::Endpoint::from_shared(config.grpc_vfs_url.clone())?
+            .connect_timeout(std::time::Duration::from_secs(
+                config.grpc_vfs_connect_timeout_secs,
+            ))
+            .keep_alive_timeout(std::time::Duration::from_secs(
+                config.grpc_vfs_connect_timeout_secs,
+            ))
             .keep_alive_while_idle(true)
-            .http2_keep_alive_interval(std::time::Duration::from_secs(connect_timeout_secs));
+            .http2_keep_alive_interval(std::time::Duration::from_secs(
+                config.grpc_vfs_connect_timeout_secs,
+            ));
 
         let client = grpsqlite_client::GrpsqliteClient::connect(endpoint).await?;
         Ok(client)
@@ -65,8 +67,10 @@ impl GrpcVfs {
             .build()
             .unwrap(); // SQLite is single-threaded, so we can use a single-threaded runtime
 
+        let config = env_config::EnvConfig::new();
+
         let (client, capabilities, context) = runtime.block_on(async {
-            let mut client = Self::create_grpc_client().await.unwrap();
+            let mut client = Self::create_grpc_client(&config).await.unwrap();
 
             let req = GetCapabilitiesRequest {
                 client_token: std::env::var("GRPC_VFS_CLIENT_TOKEN")
@@ -88,6 +92,11 @@ impl GrpcVfs {
             (client, capabilities, capabilities_response.context)
         });
 
+        // If the local cache dir is set, make sure it exists
+        if let Some(local_cache_dir) = &config.local_cache_dir {
+            std::fs::create_dir_all(local_cache_dir).unwrap();
+        }
+
         Self {
             runtime,
             context,
@@ -101,6 +110,7 @@ impl GrpcVfs {
             heartbeat_shutdown_tx: Arc::new(Mutex::new(None)),
             first_page_cache: Arc::new(Mutex::new(vec![])),
             database: Arc::new(Mutex::new(String::new())),
+            env_config: config,
         }
     }
 
@@ -123,6 +133,8 @@ impl GrpcVfs {
             heartbeat_interval
         );
 
+        let env_config = self.env_config.clone();
+
         std::thread::spawn(move || {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_time()
@@ -132,7 +144,7 @@ impl GrpcVfs {
 
             rt.block_on(async {
                 // Create a new gRPC client within this runtime using the factory (otherwise it will hang because of the shared channel)
-                let grpc_client = match GrpcVfs::create_grpc_client().await {
+                let grpc_client = match GrpcVfs::create_grpc_client(&env_config).await {
                     Ok(client) => client,
                     Err(e) => {
                         log::error!("Failed to connect gRPC client in heartbeat thread: {:?}", e);
