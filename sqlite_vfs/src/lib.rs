@@ -315,7 +315,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
             }
         }
 
-        if let Some(true) = self.env_config.preload_cache {
+        if self.env_config.preload_cache == Some(true) {
             // TODO: spawn preload cache with env_config.preload_cache_concurrency
             log::debug!("TODO kicking off preload cache");
         }
