@@ -218,6 +218,8 @@ Depending on how you store data, this can dramatically speed up reads.
 
 _Because the first page of the DB is accessed so aggressively, it's always cached in memory on the RW instance._
 
+The cache currently uses a file per page. While this is less than ideal performance wise, it makes LRU-style caching simpler. The first page is always skipped, as it's always held in memory.
+
 You may also configure "blind local reads", which will forces reads to run fully locally if the data is cached. This choose performance at the expense of not guaranteeing a held lease, and possibly reading stale data.
 
 ## Tips for Writing a gRPC server

@@ -1,5 +1,7 @@
+use std::collections::HashMap;
 use std::ffi::{CStr, c_char, c_int, c_void};
 use std::path::Path;
+use std::sync::atomic::AtomicUsize;
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -35,6 +37,9 @@ struct GrpcVfs {
     first_page_cache: Arc<Mutex<Vec<u8>>>,
     database: Arc<Mutex<String>>,
     env_config: env_config::EnvConfig,
+    /// page_offset -> checksum, also serves to keep track of what pages are cached locally (and cache size)
+    local_page_checksums: Arc<Mutex<HashMap<u64, u64>>>,
+    // TODO: add LRU with https://github.com/cloudflare/pingora/blob/main/tinyufo
 }
 
 impl GrpcVfs {
@@ -111,6 +116,7 @@ impl GrpcVfs {
             first_page_cache: Arc::new(Mutex::new(vec![])),
             database: Arc::new(Mutex::new(String::new())),
             env_config: config,
+            local_page_checksums: Arc::new(Mutex::new(HashMap::new())),
         }
     }
 
@@ -309,6 +315,11 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
             }
         }
 
+        if matches!(self.env_config.preload_cache, Some(true)) {
+            // TODO: spawn preload cache with env_config.preload_cache_concurrency
+            log::debug!("TODO kicking off preload cache");
+        }
+
         let handle = handle::GrpcVfsHandle::new(
             path.unwrap_or("").to_string(),
             mode.is_readonly(),
@@ -350,6 +361,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                 // Delete locally only if server delete succeeded
                 let mut files = self.files.lock();
                 files.retain(|f| f.file_path != path);
+                // TODO: delete local cache files
                 Ok(())
             }
             Err(err) => Err(err),
@@ -435,6 +447,8 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
             }
             Err(err) => Err(err),
         }
+
+        // TODO: truncate the cache files
     }
 
     fn write(
@@ -475,6 +489,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
 
         // Write over the server
         log::debug!("writing directly to server");
+        let checksum = xxh3_64(data);
         let result = self.runtime.block_on(async {
             let req = WriteRequest {
                 context: self.context.clone(),
@@ -482,7 +497,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                 data: data.to_vec(),
                 file_name: handle.file_path.clone(),
                 offset: offset as i64,
-                checksum: xxh3_64(data),
+                checksum: checksum,
                 database: self.database.lock().clone(),
             };
 
@@ -508,6 +523,8 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                     log::debug!("updating first page cache for direct write (full sector)");
                     *self.first_page_cache.lock() = data.to_vec();
                 }
+
+                // TODO: write to local cache files if not first page
 
                 Ok(data.len())
             }
@@ -603,12 +620,15 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
             return Ok(bytes_to_copy);
         }
 
+        // TODO: read from local cache files if not first page and blind local reads is enabled
+
         // Get the current read timestamp or use 0 if we don't have one
         let current_timestamp = self.current_read_timestamp.lock().unwrap_or(0);
 
         // Read from the server
         let result = self.runtime.block_on(async {
             log::debug!("reading from server with timestamp: {}", current_timestamp);
+            // TODO: if local cache enabled, and page is cached locally, send checksum of page
             let req = ReadRequest {
                 context: self.context.clone(),
                 lease_id: lease_id.unwrap_or("".to_string()),

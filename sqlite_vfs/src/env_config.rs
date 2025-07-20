@@ -8,6 +8,7 @@ pub struct EnvConfig {
     pub blind_local_reads: Option<bool>,
     /// Preload the cache on startup. Does not block reads. Will start from the DB head and download up to the max cache size.
     pub preload_cache: Option<bool>,
+    pub preload_cache_concurrency: u32,
 }
 
 impl EnvConfig {
@@ -29,6 +30,10 @@ impl EnvConfig {
             preload_cache: std::env::var("PRELOAD_CACHE")
                 .ok()
                 .and_then(|s| s.parse::<bool>().ok()),
+            preload_cache_concurrency: std::env::var("PRELOAD_CACHE_CONCURRENCY")
+                .ok()
+                .and_then(|s| s.parse::<u32>().ok())
+                .unwrap_or(4),
         }
     }
 }
