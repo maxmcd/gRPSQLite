@@ -19,6 +19,9 @@ name = "memory_server_no_atomic"
 [[example]]
 name = "versioned_memory_server"
 
+[[example]]
+name = "memory_server_with_checksums"
+
 [workspace]
 resolver = "3"
 members = ["sqlite_vfs"]
