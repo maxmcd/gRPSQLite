@@ -23,6 +23,13 @@ struct Capabilities {
     heartbeat_interval_millis: i64,
 }
 
+#[derive(Clone, Debug)]
+struct CachedPage {
+    pub offset: u64,
+    pub file_name: String,
+    pub database: String,
+}
+
 struct GrpcVfs {
     runtime: tokio::runtime::Runtime,
     capabilities: Capabilities,
@@ -37,9 +44,10 @@ struct GrpcVfs {
     first_page_cache: Arc<Mutex<Vec<u8>>>,
     database: Arc<Mutex<String>>,
     env_config: env_config::EnvConfig,
-    /// page_offset -> checksum, also serves to keep track of what pages are cached locally (and cache size)
-    local_page_checksums: Arc<Mutex<HashMap<u64, u64>>>,
-    // TODO: add LRU with https://github.com/cloudflare/pingora/blob/main/tinyufo
+    /// Cache of page keys (database:file:offset) -> CachedPage info
+    cached_pages: Option<tinyufo::TinyUfo<String, CachedPage>>,
+    /// Track checksums for cached pages: page_key -> checksum
+    cached_page_checksums: Arc<Mutex<HashMap<String, u64>>>,
 }
 
 impl GrpcVfs {
@@ -101,6 +109,18 @@ impl GrpcVfs {
         if let Some(local_cache_dir) = &config.local_cache_dir {
             std::fs::create_dir_all(local_cache_dir).unwrap();
         }
+        let local_page_cache = {
+            if config.local_cache_dir.is_some() && config.max_cache_bytes.is_some() {
+                let max_cache_bytes = config.max_cache_bytes.unwrap();
+                let max_pages = (max_cache_bytes / capabilities.sector_size as u64).max(1);
+                Some(tinyufo::TinyUfo::new(
+                    max_pages as usize,
+                    max_pages as usize,
+                ))
+            } else {
+                None
+            }
+        };
 
         Self {
             runtime,
@@ -116,7 +136,8 @@ impl GrpcVfs {
             first_page_cache: Arc::new(Mutex::new(vec![])),
             database: Arc::new(Mutex::new(String::new())),
             env_config: config,
-            local_page_checksums: Arc::new(Mutex::new(HashMap::new())),
+            cached_page_checksums: Arc::new(Mutex::new(HashMap::new())),
+            cached_pages: local_page_cache,
         }
     }
 
