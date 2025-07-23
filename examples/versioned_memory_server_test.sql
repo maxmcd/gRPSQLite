@@ -3,6 +3,7 @@
 .log stderr
 .open main.db
 PRAGMA journal_mode=memory;
+PRAGMA cache_size = 0;
 CREATE TABLE t1(a, b);
 SELECT * FROM t1;
 INSERT INTO t1 VALUES(1, 2);

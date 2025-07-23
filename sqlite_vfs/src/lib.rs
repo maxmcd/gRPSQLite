@@ -1,5 +1,7 @@
+use std::collections::HashMap;
 use std::ffi::{CStr, c_char, c_int, c_void};
-use std::path::Path;
+use std::io::Read;
+use std::path::{Path, PathBuf};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, Ordering},
@@ -11,6 +13,7 @@ use xxhash_rust::xxh3::xxh3_64;
 
 tonic::include_proto!("grpc_vfs");
 
+mod env_config;
 mod handle;
 
 struct Capabilities {
@@ -18,6 +21,14 @@ struct Capabilities {
     point_in_time_reads: bool,
     sector_size: i32,
     heartbeat_interval_millis: i64,
+}
+
+#[derive(Clone, Debug)]
+struct CachedPage {
+    pub offset: u64,
+    pub file_name: String,
+    pub database: String,
+    pub checksum: u64,
 }
 
 struct GrpcVfs {
@@ -33,26 +44,39 @@ struct GrpcVfs {
     heartbeat_shutdown_tx: Arc<Mutex<Option<tokio::sync::oneshot::Sender<()>>>>,
     first_page_cache: Arc<Mutex<Vec<u8>>>,
     database: Arc<Mutex<String>>,
+    env_config: env_config::EnvConfig,
+    /// Cache of cache_keys (database:file:offset) -> CachedPage info
+    cached_pages: Option<tinyufo::TinyUfo<String, CachedPage>>,
+    /// Track checksums for cached pages: cache_key -> checksum
+    cached_page_checksums: Arc<Mutex<HashMap<String, CachedPage>>>,
+}
+
+fn cache_key(database: &str, file_name: &str, offset: u64) -> String {
+    format!("{}:{}:{}", database, file_name, offset)
+}
+
+fn cache_file_path(cache_dir: &str, cache_key: &str) -> PathBuf {
+    Path::new(cache_dir).join(cache_key)
 }
 
 impl GrpcVfs {
-    async fn create_grpc_client() -> Result<
+    async fn create_grpc_client(
+        config: &env_config::EnvConfig,
+    ) -> Result<
         grpsqlite_client::GrpsqliteClient<tonic::transport::Channel>,
         Box<dyn std::error::Error + Send + Sync>,
     > {
-        let url =
-            std::env::var("GRPC_VFS_URL").unwrap_or_else(|_| "http://localhost:50051".to_string());
-
-        let connect_timeout_secs = std::env::var("GRPC_VFS_CONNECT_TIMEOUT_SECS")
-            .ok()
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(10);
-
-        let endpoint = tonic::transport::Endpoint::from_shared(url)?
-            .connect_timeout(std::time::Duration::from_secs(connect_timeout_secs))
-            .keep_alive_timeout(std::time::Duration::from_secs(connect_timeout_secs))
+        let endpoint = tonic::transport::Endpoint::from_shared(config.grpc_vfs_url.clone())?
+            .connect_timeout(std::time::Duration::from_secs(
+                config.grpc_vfs_connect_timeout_secs,
+            ))
+            .keep_alive_timeout(std::time::Duration::from_secs(
+                config.grpc_vfs_connect_timeout_secs,
+            ))
             .keep_alive_while_idle(true)
-            .http2_keep_alive_interval(std::time::Duration::from_secs(connect_timeout_secs));
+            .http2_keep_alive_interval(std::time::Duration::from_secs(
+                config.grpc_vfs_connect_timeout_secs,
+            ));
 
         let client = grpsqlite_client::GrpsqliteClient::connect(endpoint).await?;
         Ok(client)
@@ -65,8 +89,10 @@ impl GrpcVfs {
             .build()
             .unwrap(); // SQLite is single-threaded, so we can use a single-threaded runtime
 
+        let config = env_config::EnvConfig::new();
+
         let (client, capabilities, context) = runtime.block_on(async {
-            let mut client = Self::create_grpc_client().await.unwrap();
+            let mut client = Self::create_grpc_client(&config).await.unwrap();
 
             let req = GetCapabilitiesRequest {
                 client_token: std::env::var("GRPC_VFS_CLIENT_TOKEN")
@@ -88,6 +114,23 @@ impl GrpcVfs {
             (client, capabilities, capabilities_response.context)
         });
 
+        // If the local cache dir is set, make sure it exists
+        if let Some(local_cache_dir) = &config.local_cache_dir {
+            std::fs::create_dir_all(local_cache_dir).unwrap();
+        }
+        let local_page_cache = {
+            if config.local_cache_dir.is_some() && config.max_cache_bytes.is_some() {
+                let max_cache_bytes = config.max_cache_bytes.unwrap();
+                let max_pages = (max_cache_bytes / capabilities.sector_size as u64).max(1);
+                Some(tinyufo::TinyUfo::new(
+                    max_pages as usize,
+                    max_pages as usize,
+                ))
+            } else {
+                None
+            }
+        };
+
         Self {
             runtime,
             context,
@@ -101,6 +144,9 @@ impl GrpcVfs {
             heartbeat_shutdown_tx: Arc::new(Mutex::new(None)),
             first_page_cache: Arc::new(Mutex::new(vec![])),
             database: Arc::new(Mutex::new(String::new())),
+            env_config: config,
+            cached_page_checksums: Arc::new(Mutex::new(HashMap::new())),
+            cached_pages: local_page_cache,
         }
     }
 
@@ -123,6 +169,8 @@ impl GrpcVfs {
             heartbeat_interval
         );
 
+        let env_config = self.env_config.clone();
+
         std::thread::spawn(move || {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_time()
@@ -132,7 +180,7 @@ impl GrpcVfs {
 
             rt.block_on(async {
                 // Create a new gRPC client within this runtime using the factory (otherwise it will hang because of the shared channel)
-                let grpc_client = match GrpcVfs::create_grpc_client().await {
+                let grpc_client = match GrpcVfs::create_grpc_client(&env_config).await {
                     Ok(client) => client,
                     Err(e) => {
                         log::error!("Failed to connect gRPC client in heartbeat thread: {:?}", e);
@@ -297,6 +345,11 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
             }
         }
 
+        if self.env_config.preload_cache == true {
+            // TODO: spawn preload cache with env_config.preload_cache_concurrency
+            log::debug!("TODO kicking off preload cache");
+        }
+
         let handle = handle::GrpcVfsHandle::new(
             path.unwrap_or("").to_string(),
             mode.is_readonly(),
@@ -310,10 +363,11 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
         log::debug!("delete: path={}", path);
 
         // Delete over the server
+        let database = { self.database.lock().clone() };
         let result = self.runtime.block_on(async {
             let req = DeleteRequest {
                 context: self.context.clone(),
-                database: self.database.lock().clone(),
+                database: database.clone(),
                 lease_id: self.lease.lock().clone().unwrap_or("".to_string()),
                 file_name: path.to_string(),
             };
@@ -333,11 +387,31 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
             }
         });
 
+        // Delete from the cache
+        let mut cache_checksums = self.cached_page_checksums.lock();
+        let deleted_keys = cache_checksums
+            .iter()
+            .filter(|(k, _)| k.starts_with(path))
+            .map(|(k, _)| k.clone())
+            .collect::<Vec<String>>();
+        for key in deleted_keys {
+            log::debug!("deleting cache file: {}", key);
+            cache_checksums.remove(&key);
+            self.cached_pages.as_ref().unwrap().remove(&key);
+            let cached_path =
+                cache_file_path(self.env_config.local_cache_dir.as_ref().unwrap(), &key);
+            if let Err(e) = std::fs::remove_file(&cached_path) {
+                log::error!("failed to remove cache file {:?}: {}", cached_path, e);
+                return Err(sqlite_plugin::vars::SQLITE_IOERR_DELETE);
+            }
+        }
+
         match result {
             Ok(_) => {
                 // Delete locally only if server delete succeeded
                 let mut files = self.files.lock();
                 files.retain(|f| f.file_path != path);
+
                 Ok(())
             }
             Err(err) => Err(err),
@@ -355,10 +429,11 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
 
     fn file_size(&self, handle: &mut Self::Handle) -> sqlite_plugin::vfs::VfsResult<usize> {
         log::debug!("file_size: path={}", handle.file_path);
+        let database = { self.database.lock().clone() };
         self.runtime.block_on(async {
             let req = GetFileSizeRequest {
                 context: self.context.clone(),
-                database: self.database.lock().clone(),
+                database: database.clone(),
                 lease_id: self.lease.lock().clone().unwrap_or("".to_string()),
                 file_name: handle.file_path.clone(),
             };
@@ -387,10 +462,11 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
     ) -> sqlite_plugin::vfs::VfsResult<()> {
         log::debug!("truncate: path={}, size={}", handle.file_path, size);
         // Truncate over the server
+        let database = { self.database.lock().clone() };
         let result = self.runtime.block_on(async {
             let req = TruncateRequest {
                 context: self.context.clone(),
-                database: self.database.lock().clone(),
+                database: database.clone(),
                 lease_id: self.lease.lock().clone().unwrap_or("".to_string()),
                 file_name: handle.file_path.clone(),
                 size: size as i64,
@@ -411,6 +487,44 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
             }
         });
 
+        // Clear cache entries for pages beyond the truncated size
+        let mut cache_checksums = self.cached_page_checksums.lock();
+        let keys_to_remove: Vec<String> = cache_checksums
+            .iter()
+            .filter_map(|(key, cached_page)| {
+                if cached_page.database == database
+                    && cached_page.file_name == handle.file_path
+                    && cached_page.offset >= size as u64
+                    && cached_page.offset > 0
+                {
+                    Some(key.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        for key in keys_to_remove {
+            log::debug!("removing cached page beyond truncate size: {}", key);
+            cache_checksums.remove(&key);
+
+            // Remove from TinyUfo cache if it exists
+            if let Some(ref cache) = self.cached_pages {
+                cache.remove(&key);
+            }
+
+            // Remove cache file if local caching is enabled
+            if let Some(cache_dir) = &self.env_config.local_cache_dir {
+                let cache_file = cache_file_path(cache_dir, &key);
+                if cache_file.exists() {
+                    if let Err(e) = std::fs::remove_file(&cache_file) {
+                        log::error!("failed to remove cache file {:?}: {}", cache_file, e);
+                        return Err(sqlite_plugin::vars::SQLITE_IOERR_TRUNCATE);
+                    }
+                }
+            }
+        }
+
         match result {
             Ok(_) => {
                 // Clear first page cache if we're RW and truncating affects the first page
@@ -419,6 +533,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                     log::debug!("clearing first page cache due to truncate");
                     self.first_page_cache.lock().clear();
                 }
+
                 Ok(())
             }
             Err(err) => Err(err),
@@ -463,6 +578,8 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
 
         // Write over the server
         log::debug!("writing directly to server");
+        let checksum = xxh3_64(data);
+        let database = { self.database.lock().clone() };
         let result = self.runtime.block_on(async {
             let req = WriteRequest {
                 context: self.context.clone(),
@@ -470,8 +587,8 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                 data: data.to_vec(),
                 file_name: handle.file_path.clone(),
                 offset: offset as i64,
-                checksum: xxh3_64(data),
-                database: self.database.lock().clone(),
+                checksum: checksum,
+                database: database.clone(),
             };
 
             let start = Instant::now();
@@ -497,6 +614,64 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                     *self.first_page_cache.lock() = data.to_vec();
                 }
 
+                // Write to local cache files if not first page and caching is enabled
+                if !is_first_page && self.env_config.local_cache_dir.is_some() {
+                    let cached_key = cache_key(&database, &handle.file_path, offset as u64);
+
+                    let cached_page = CachedPage {
+                        offset: offset as u64,
+                        file_name: handle.file_path.clone(),
+                        database: database.clone(),
+                        checksum,
+                    };
+
+                    // Put in TinyUfo cache (weight = 1 for each page)
+                    let evicted = self.cached_pages.as_ref().unwrap().put(
+                        cached_key.clone(),
+                        cached_page.clone(),
+                        1,
+                    );
+
+                    let mut checksums = self.cached_page_checksums.lock();
+
+                    // Clean up evicted cache files
+                    for evicted_item in evicted {
+                        log::debug!("evicting cache item: {}", evicted_item.key);
+                        let evicted_key = cache_key(
+                            &evicted_item.data.database,
+                            &evicted_item.data.file_name,
+                            evicted_item.data.offset,
+                        );
+                        checksums.remove(&evicted_key);
+
+                        if let Some(cache_dir) = &self.env_config.local_cache_dir {
+                            let evicted_cache_file = cache_file_path(cache_dir, &evicted_key);
+                            if evicted_cache_file.exists() {
+                                if let Err(e) = std::fs::remove_file(&evicted_cache_file) {
+                                    log::warn!(
+                                        "failed to remove evicted cache file {:?}: {}",
+                                        evicted_cache_file,
+                                        e
+                                    );
+                                }
+                            }
+                        }
+                    }
+
+                    // Update the checksum tracking
+                    checksums.insert(cached_key.clone(), cached_page);
+
+                    // Write data to cache file
+                    if let Some(cache_dir) = &self.env_config.local_cache_dir {
+                        let cache_file = cache_file_path(cache_dir, &cached_key);
+                        if let Err(e) = std::fs::write(&cache_file, data) {
+                            log::error!("failed to write cache file {:?}: {}", cache_file, e);
+                            return Err(sqlite_plugin::vars::SQLITE_IOERR_WRITE);
+                        }
+                        log::debug!("wrote {} bytes to cache file: {}", data.len(), cached_key);
+                    }
+                }
+
                 Ok(data.len())
             }
             Err(err) => Err(err),
@@ -520,6 +695,8 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
         let is_rw = lease_id.is_some();
         let is_first_page = offset + data.len() <= self.capabilities.sector_size as usize;
 
+        let database = { self.database.lock().clone() };
+
         if is_rw && is_first_page && handle.is_main_db {
             log::debug!("reading from first page cache");
             let mut cache = self.first_page_cache.lock();
@@ -540,7 +717,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                         length: self.capabilities.sector_size as i64,
                         time_millis: current_timestamp,
                         checksum: 0, // Empty checksum for now
-                        database: self.database.lock().clone(),
+                        database: database.clone(),
                     };
 
                     let start = Instant::now();
@@ -591,12 +768,40 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
             return Ok(bytes_to_copy);
         }
 
+        // read from local cache files if not first page and blind local reads is enabled
+        if !is_first_page
+            && self.env_config.local_cache_dir.is_some()
+            && self.env_config.local_reads
+        {
+            let cached_key = cache_key(&database, &handle.file_path, offset as u64);
+            let cached_page = self.cached_pages.as_ref().unwrap().get(&cached_key);
+            if cached_page.is_some() {
+                log::debug!("local read from local cache file: {}", cached_key);
+                // Read the cached page into the data buffer from the cache file
+                let cache_file = cache_file_path(
+                    &self.env_config.local_cache_dir.as_ref().unwrap(),
+                    &cached_key,
+                );
+                let mut file = std::fs::File::open(cache_file).unwrap();
+                let bytes_read = file.read(data).unwrap();
+                return Ok(bytes_read);
+            }
+        }
+
         // Get the current read timestamp or use 0 if we don't have one
         let current_timestamp = self.current_read_timestamp.lock().unwrap_or(0);
 
         // Read from the server
         let result = self.runtime.block_on(async {
             log::debug!("reading from server with timestamp: {}", current_timestamp);
+            // if local cache enabled, and page is cached locally, send checksum of page
+            let mut checksum = 0;
+            if self.env_config.local_cache_dir.is_some() {
+                let cached_key = cache_key(&database, &handle.file_path, offset as u64);
+                if let Some(cached_page) = self.cached_pages.as_ref().unwrap().get(&cached_key) {
+                    checksum = cached_page.checksum;
+                }
+            }
             let req = ReadRequest {
                 context: self.context.clone(),
                 lease_id: lease_id.unwrap_or("".to_string()),
@@ -604,8 +809,8 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                 offset: offset as i64,
                 length: data.len() as i64,
                 time_millis: current_timestamp,
-                checksum: 0, // Empty checksum for now
-                database: self.database.lock().clone(),
+                checksum,
+                database: database.clone(),
             };
 
             let start = Instant::now();
@@ -626,13 +831,95 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
 
         match result {
             Ok(response_data) => {
-                let len = data.len().min(response_data.data.len());
-                data[..len].copy_from_slice(&response_data.data[..len]);
-
                 // Set the read timestamp if we don't have one and the response has a non-zero timestamp
                 if current_timestamp == 0 && response_data.time_millis != 0 {
                     *self.current_read_timestamp.lock() = Some(response_data.time_millis);
                 }
+
+                if response_data.data.len() == 0 && self.env_config.local_cache_dir.is_some() {
+                    // Read the local cache file
+                    let cached_key = cache_key(&database, &handle.file_path, offset as u64);
+                    log::debug!(
+                        "server sent no data, reading from local cache file: {}",
+                        cached_key
+                    );
+                    let cache_file = cache_file_path(
+                        &self.env_config.local_cache_dir.as_ref().unwrap(),
+                        &cached_key,
+                    );
+                    let mut file = std::fs::File::open(cache_file).unwrap();
+                    let bytes_read = file.read(data).unwrap();
+                    return Ok(bytes_read);
+                }
+
+                // Insert into the local cache
+                if !is_first_page
+                    && self.env_config.local_cache_dir.is_some()
+                    && !response_data.data.is_empty()
+                {
+                    let cached_key = cache_key(&database, &handle.file_path, offset as u64);
+                    let checksum = xxh3_64(&response_data.data);
+
+                    let cached_page = CachedPage {
+                        offset: offset as u64,
+                        file_name: handle.file_path.clone(),
+                        database: database.clone(),
+                        checksum,
+                    };
+
+                    // Put in TinyUfo cache (weight = 1 for each page)
+                    let evicted = self.cached_pages.as_ref().unwrap().put(
+                        cached_key.clone(),
+                        cached_page.clone(),
+                        1,
+                    );
+
+                    let mut checksums = self.cached_page_checksums.lock();
+
+                    // Clean up evicted cache files
+                    for evicted_item in evicted {
+                        log::debug!("evicting cache item: {}", evicted_item.key);
+                        let evicted_key = cache_key(
+                            &evicted_item.data.database,
+                            &evicted_item.data.file_name,
+                            evicted_item.data.offset,
+                        );
+                        checksums.remove(&evicted_key);
+
+                        if let Some(cache_dir) = &self.env_config.local_cache_dir {
+                            let evicted_cache_file = cache_file_path(cache_dir, &evicted_key);
+                            if evicted_cache_file.exists() {
+                                if let Err(e) = std::fs::remove_file(&evicted_cache_file) {
+                                    log::warn!(
+                                        "failed to remove evicted cache file {:?}: {}",
+                                        evicted_cache_file,
+                                        e
+                                    );
+                                }
+                            }
+                        }
+                    }
+
+                    // Update the checksum tracking
+                    checksums.insert(cached_key.clone(), cached_page);
+
+                    // Write data to cache file
+                    if let Some(cache_dir) = &self.env_config.local_cache_dir {
+                        let cache_file = cache_file_path(cache_dir, &cached_key);
+                        if let Err(e) = std::fs::write(&cache_file, &response_data.data) {
+                            log::error!("failed to write cache file {:?}: {}", cache_file, e);
+                            return Err(sqlite_plugin::vars::SQLITE_IOERR_READ);
+                        }
+                        log::debug!(
+                            "wrote {} bytes to cache file: {}",
+                            response_data.data.len(),
+                            cached_key
+                        );
+                    }
+                }
+
+                let len = data.len().min(response_data.data.len());
+                data[..len].copy_from_slice(&response_data.data[..len]);
 
                 Ok(len)
             }
@@ -645,6 +932,28 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
 
         // Close rpc
         let result = self.runtime.block_on(async {
+            // Delete all local cache files
+            if self.env_config.local_cache_dir.is_some() {
+                log::debug!("deleting local cache files");
+                let mut cache_checksums = self.cached_page_checksums.lock();
+                let deleted_keys = cache_checksums
+                    .iter()
+                    .filter(|(k, _)| k.starts_with(&handle.file_path))
+                    .map(|(k, _)| k.clone())
+                    .collect::<Vec<String>>();
+                for key in deleted_keys {
+                    log::debug!("deleting cache file: {}", key);
+                    cache_checksums.remove(&key);
+                    self.cached_pages.as_ref().unwrap().remove(&key);
+                    let cached_path =
+                        cache_file_path(self.env_config.local_cache_dir.as_ref().unwrap(), &key);
+                    if let Err(e) = std::fs::remove_file(&cached_path) {
+                        log::error!("failed to remove cache file {:?}: {}", cached_path, e);
+                        return Err(sqlite_plugin::vars::SQLITE_IOERR_DELETE);
+                    }
+                }
+            }
+
             let req = CloseRequest {
                 context: self.context.clone(),
                 lease_id: self.lease.lock().clone().unwrap_or("".to_string()),
@@ -709,6 +1018,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
         log::debug!("pragma: file={:?}, pragma={:?}", handle.file_path, pragma);
 
         // Call the gRPC server to handle the pragma
+        let database = { self.database.lock().clone() };
         let result = self.runtime.block_on(async {
             let req = PragmaRequest {
                 context: self.context.clone(),
@@ -716,7 +1026,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                 file_name: handle.file_path.clone(),
                 pragma_name: pragma.name.to_string(),
                 pragma_value: pragma.arg.unwrap_or("").to_string(),
-                database: self.database.lock().clone(),
+                database: database.clone(),
             };
 
             let start = Instant::now();
@@ -775,12 +1085,13 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                         return Ok(());
                     }
 
+                    let database = { self.database.lock().clone() };
                     let req = AtomicWriteBatchRequest {
                         context: self.context.clone(),
                         lease_id: self.lease.lock().clone().unwrap_or("".to_string()),
                         file_name: handle.file_path.clone(),
                         writes: batch,
-                        database: self.database.lock().clone(),
+                        database: database.clone(),
                     };
 
                     let start = Instant::now();
