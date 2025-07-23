@@ -27,7 +27,28 @@ select * from dbstat;
 .log stderr
 .open main.db
 PRAGMA journal_mode=memory;
+PRAGMA cache_size = 0;
 CREATE TABLE t1(a, b);
 SELECT * FROM t1;
 INSERT INTO t1 VALUES(1, 2);
 SELECT * FROM t1;
+
+
+
+-- Insert 1000 rows using recursive CTE
+WITH RECURSIVE generate_series(x) AS (
+  SELECT 1
+  UNION ALL
+  SELECT x+1 FROM generate_series WHERE x < 10000
+)
+INSERT INTO t1 SELECT x, x*2 FROM generate_series;
+
+select * from t1;
+
+-- Force reading all pages with modulo condition
+select count(*) from t1 where a % 100 = 3;
+
+-- Alternative: division check that forces full scan
+select count(*) from t1 where a / 100 >= 0;
+
+select count(*) from t1 where a = 1;
