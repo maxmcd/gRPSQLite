@@ -1128,7 +1128,6 @@ dependencies = [
  "im",
  "log",
  "prost",
- "slatedb",
  "tokio",
  "tonic",
  "tonic-build",
@@ -2132,7 +2131,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be769465445e8c1474e9c5dac2018218498557af32d9ed057325ec9a41ae81bf"
 dependencies = [
  "heck 0.5.0",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "log",
  "multimap",
  "once_cell",
@@ -2152,7 +2151,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8a56d757972c98b346a9b766e3f02746cde6dd1cd1d1d563472929fdd74bec4d"
 dependencies = [
  "anyhow",
- "itertools 0.13.0",
+ "itertools 0.14.0",
  "proc-macro2",
  "quote",
  "syn 2.0.101",
@@ -2770,6 +2769,19 @@ dependencies = [
  "ulid",
  "uuid",
  "walkdir",
+]
+
+[[package]]
+name = "slatedb-server"
+version = "0.1.0"
+dependencies = [
+ "grpsqlite",
+ "log",
+ "prost",
+ "slatedb",
+ "tokio",
+ "tonic",
+ "uuid",
 ]
 
 [[package]]

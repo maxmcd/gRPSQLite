@@ -1,7 +1,2 @@
-// Simple C constructor to initialize the Rust grpsqlite before SQLite starts
-extern int initialize_grpsqlite(void);
-
-__attribute__((constructor)) static void init()
-{
-    initialize_grpsqlite();
-}
+// Placeholder C file for linking with grpsqlite Rust library  
+// VFS initialization handled by patched SQLite functions to avoid threading issues

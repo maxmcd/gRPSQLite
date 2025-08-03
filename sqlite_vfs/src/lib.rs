@@ -269,6 +269,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
             }
 
             fn log(&self, record: &log::Record) {
+                // println!("log: {:?}", record);
                 let level = match record.level() {
                     log::Level::Error => sqlite_plugin::logger::SqliteLogLevel::Error,
                     log::Level::Warn => sqlite_plugin::logger::SqliteLogLevel::Warn,
@@ -284,7 +285,10 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
         let log = LogCompat {
             logger: Mutex::new(logger),
         };
-        log::set_boxed_logger(Box::new(log)).expect("failed to setup global logger");
+        if let Err(e) = log::set_boxed_logger(Box::new(log)) {
+            // Logger already set, ignore the error
+            eprintln!("Logger already initialized: {}", e);
+        }
     }
 
     fn open(
@@ -300,6 +304,8 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
             return Err(sqlite_plugin::vars::SQLITE_CANTOPEN);
         }
 
+        let mut database = None;
+
         if opts.kind() == sqlite_plugin::flags::OpenKind::MainDb {
             let database_name = path
                 .and_then(|p| Path::new(p).file_name())
@@ -307,6 +313,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
                 .unwrap_or("")
                 .to_string();
             log::debug!("database name: {}", database_name);
+            database = Some(database_name.clone());
             *self.database.lock() = database_name;
         }
 
@@ -354,6 +361,7 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
             path.unwrap_or("").to_string(),
             mode.is_readonly(),
             opts.kind() == sqlite_plugin::flags::OpenKind::MainDb,
+            database,
         );
         self.files.lock().push(handle.clone());
         Ok(handle)
@@ -423,8 +431,9 @@ impl sqlite_plugin::vfs::Vfs for GrpcVfs {
         path: &str,
         flags: sqlite_plugin::flags::AccessFlags,
     ) -> sqlite_plugin::vfs::VfsResult<bool> {
-        log::debug!("access: path={}, flags={:?}", path, flags);
-        Ok(self.files.lock().iter().any(|f| f.file_path == path))
+        let exists = self.files.lock().iter().any(|f| f.file_path == path);
+        log::debug!("access: path={path}, flags={flags:?}, exists={exists}");
+        Ok(exists)
     }
 
     fn file_size(&self, handle: &mut Self::Handle) -> sqlite_plugin::vfs::VfsResult<usize> {

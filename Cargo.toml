@@ -9,7 +9,6 @@ tonic = "0.13.1"
 prost = "0.13.5"
 uuid = { version = "1.17.0", features = ["v4"] }
 log = { version = "0.4.27", features = ["std"] }
-slatedb = "0.7.0"
 
 [[example]]
 name = "memory_server"
@@ -25,7 +24,7 @@ name = "memory_server_with_checksums"
 
 [workspace]
 resolver = "3"
-members = ["sqlite_vfs"]
+members = ["slatedb-server", "sqlite_vfs"]
 
 [build-dependencies]
 tonic-build = "0.13.1"

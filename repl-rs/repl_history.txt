@@ -1,0 +1,21 @@
+#V2
+.quit
+.help
+.tables
+CREATE TABLE users(id, name);
+INSERT INTO users VALUES(1, 'Alice'), (2, 'Bob');
+SELECT * FROM users;
+.quit
+select * from users ;l
+select * from users ;
+select * from users;
+.open test.db
+select * from users;
+.open repl.db;
+.open repl.db
+select * from users; 
+.open repl.db
+select * from users; 
+CREATE TABLE users(id, name);
+INSERT INTO users VALUES(1, 'Alice'), (2, 'Bob');
+select * from users; 
